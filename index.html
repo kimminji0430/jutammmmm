@@ -105,7 +105,7 @@
       ctx.beginPath();
       ctx.moveTo(centerX, centerY);
       ctx.arc(centerX, centerY, radius, startRad, endRad);
-      ctx.closePath();
+      ctx.lineTo(centerX, centerY);
       ctx.fillStyle = "rgba(0, 255, 0, 0.3)";
       ctx.fill();
 
@@ -121,27 +121,28 @@
     }
 
     function handleOrientation(event) {
-      if (event.alpha !== null) {
-        const heading = event.webkitCompassHeading || event.alpha;
-        deviceHeading = (360 - heading + 360) % 360;
+      if (event.webkitCompassHeading !== undefined) {
+        deviceHeading = event.webkitCompassHeading;
+      } else if (event.alpha !== null) {
+        deviceHeading = 360 - event.alpha;
       }
     }
 
+    window.addEventListener("deviceorientationabsolute", handleOrientation);
     window.addEventListener("deviceorientation", handleOrientation);
 
     function updateCompassIfReady() {
       if (deviceHeading !== null && routeCoords.length > 1 && currentLatLng) {
         const [nextLat, nextLng] = routeCoords[closestIndex + 1] || routeCoords[closestIndex];
         const routeBearing = calculateBearing(currentLatLng[0], currentLatLng[1], nextLat, nextLng);
-
-        if (fixedTargetAngle === null) fixedTargetAngle = routeBearing;
+        fixedTargetAngle = routeBearing;  // 매번 업데이트
 
         const diff = Math.abs(fixedTargetAngle - deviceHeading);
         const angleDiff = Math.min(diff, 360 - diff);
 
-        drawCompass(fixedTargetAngle, 25, deviceHeading);
+        drawCompass(fixedTargetAngle, 30, deviceHeading);
 
-        if (angleDiff > 25) {
+        if (angleDiff > 30) {
           speak("방향이 틀렸습니다. 기기를 천천히 돌려주세요.");
         } else if (!announced.has(`heading${closestIndex}`)) {
           announced.add(`heading${closestIndex}`);
