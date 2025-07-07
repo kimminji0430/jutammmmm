@@ -56,6 +56,9 @@
     let alreadyMatched = false, directionMsgLock = false;
     let turnPoints = [], announced10 = new Set(), announced5 = new Set(), announcedTurnHere = new Set();
 
+    // GPS 오차 보정 변수
+    let lastAcceptedLatLng = null;
+
     function speak(text) {
       if (directionMsgLock) return;
       const utterance = new SpeechSynthesisUtterance(text);
@@ -80,14 +83,12 @@
       return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
     }
 
-    // ▶▶▶ 여기만 수정! 초록 부채꼴 -120도(기존보다 60도 더) 시프트 ◀◀◀
+    // 초록 부채꼴을 -120도(반시계) 이동
     function drawCompass(targetAngle, tolerance, currentAngle) {
       const canvas = document.getElementById("compassCanvas");
       const ctx = canvas.getContext("2d");
       ctx.clearRect(0, 0, 200, 200);
       const centerX = 100, centerY = 100, radius = 90;
-
-      // 초록 부채꼴을 -120도(반시계) 이동
       const offset = -120;
       const adjTarget = (targetAngle + offset + 360) % 360;
       const startRad = ((adjTarget - tolerance + 360) % 360) * Math.PI / 180;
@@ -144,6 +145,7 @@
       announced10.clear(); announced5.clear(); announcedTurnHere.clear();
       document.getElementById("progress-box").innerText = "진행률: -";
       lastDirectionState = null; alreadyMatched = false;
+      lastAcceptedLatLng = null;
     }
 
     function analyzeTurns(coords) {
@@ -203,41 +205,54 @@
       }
     });
 
+    // ▼▼▼ GPS 보정 + 고정밀 위치 적용 ▼▼▼
     if (navigator.geolocation) {
-      navigator.geolocation.watchPosition(pos => {
-        currentLatLng = [pos.coords.latitude, pos.coords.longitude];
-        if (!currentMarker) {
-          currentMarker = L.marker(currentLatLng).addTo(map);
-          map.setView(currentLatLng, 16);
-          if (!startMarker) {
-            startMarker = L.marker(currentLatLng, { icon: blueIcon }).addTo(map);
-            speak("출발지로 현재 위치를 설정했습니다. 도착지를 선택해주세요.");
+      navigator.geolocation.watchPosition(
+        pos => {
+          const newLatLng = [pos.coords.latitude, pos.coords.longitude];
+          if (lastAcceptedLatLng) {
+            const d = distance(lastAcceptedLatLng[0], lastAcceptedLatLng[1], newLatLng[0], newLatLng[1]);
+            if (d > 30) return; // 30m 이상 튀는 값 무시
           }
-        } else currentMarker.setLatLng(currentLatLng);
+          lastAcceptedLatLng = newLatLng;
+          currentLatLng = newLatLng;
 
-        if (routeCoords.length > 1) {
-          let minDist = Infinity;
-          for (let i = 0; i < routeCoords.length; i++) {
-            const d = distance(currentLatLng[0], currentLatLng[1], routeCoords[i][0], routeCoords[i][1]);
-            if (d < minDist) {
-              minDist = d;
-              closestIndex = i;
+          if (!currentMarker) {
+            currentMarker = L.marker(currentLatLng).addTo(map);
+            map.setView(currentLatLng, 16);
+            if (!startMarker) {
+              startMarker = L.marker(currentLatLng, { icon: blueIcon }).addTo(map);
+              speak("출발지로 현재 위치를 설정했습니다. 도착지를 선택해주세요.");
             }
-          }
-          const progress = Math.round((closestIndex / (routeCoords.length - 1)) * 100);
-          document.getElementById("progress-box").innerText = `진행률: ${progress}%`;
-          const traveled = routeCoords.slice(0, closestIndex + 1);
-          if (traveledLine) traveledLine.setLatLngs(traveled);
-          else traveledLine = L.polyline(traveled, { color: "green" }).addTo(map);
-          checkTurnAnnouncements();
-        }
+          } else currentMarker.setLatLng(currentLatLng);
 
-        if (routeCoords.length > 1 && closestIndex < routeCoords.length - 1) {
-          const next = routeCoords[closestIndex + 1];
-          fixedTargetAngle = calculateBearing(currentLatLng[0], currentLatLng[1], next[0], next[1]);
-        }
-      });
+          if (routeCoords.length > 1) {
+            let minDist = Infinity;
+            for (let i = 0; i < routeCoords.length; i++) {
+              const d = distance(currentLatLng[0], currentLatLng[1], routeCoords[i][0], routeCoords[i][1]);
+              if (d < minDist) {
+                minDist = d;
+                closestIndex = i;
+              }
+            }
+            const progress = Math.round((closestIndex / (routeCoords.length - 1)) * 100);
+            document.getElementById("progress-box").innerText = `진행률: ${progress}%`;
+            const traveled = routeCoords.slice(0, closestIndex + 1);
+            if (traveledLine) traveledLine.setLatLngs(traveled);
+            else traveledLine = L.polyline(traveled, { color: "green" }).addTo(map);
+            checkTurnAnnouncements();
+          }
+
+          if (routeCoords.length > 1 && closestIndex < routeCoords.length - 1) {
+            const next = routeCoords[closestIndex + 1];
+            fixedTargetAngle = calculateBearing(currentLatLng[0], currentLatLng[1], next[0], next[1]);
+          }
+        },
+        null,
+        { enableHighAccuracy: true, maximumAge: 1000, timeout: 5000 }
+      );
     }
+    // ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
     function updateCompassAlways() {
       if (deviceHeading === null || fixedTargetAngle === null) return;
