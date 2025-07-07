@@ -28,11 +28,15 @@
       transform: translateX(-50%);
       z-index: 1001;
     }
+    #sensorBtn {
+      background-color: #2e7d32; color: white;
+    }
   </style>
 </head>
 <body>
   <div id="map"></div>
   <div class="top-buttons">
+    <button id="sensorBtn">📡 방향 센서 활성화</button>
     <button id="resetBtn" onclick="resetMap()">🔄 초기화</button>
   </div>
   <div id="progress-box">진행률: -</div>
@@ -128,27 +132,48 @@
       }
     }
 
-    window.addEventListener("deviceorientationabsolute", handleOrientation);
-    window.addEventListener("deviceorientation", handleOrientation);
+    function requestSensorPermission() {
+      if (typeof DeviceOrientationEvent !== 'undefined' &&
+          typeof DeviceOrientationEvent.requestPermission === 'function') {
+        DeviceOrientationEvent.requestPermission()
+          .then(state => {
+            if (state === 'granted') {
+              window.addEventListener("deviceorientation", handleOrientation);
+              alert("방향 센서가 활성화되었습니다.");
+            } else {
+              alert("방향 센서 권한이 거부되었습니다.");
+            }
+          })
+          .catch(err => {
+            alert("권한 요청 중 오류 발생: " + err);
+          });
+      } else {
+        // Android 또는 구형 브라우저
+        window.addEventListener("deviceorientation", handleOrientation);
+        alert("방향 센서가 자동으로 활성화되었습니다.");
+      }
+    }
+
+    document.getElementById("sensorBtn").addEventListener("click", requestSensorPermission);
 
     function updateCompassIfReady() {
-      if (deviceHeading !== null && routeCoords.length > 1 && currentLatLng) {
-        const [nextLat, nextLng] = routeCoords[closestIndex + 1] || routeCoords[closestIndex];
-        const routeBearing = calculateBearing(currentLatLng[0], currentLatLng[1], nextLat, nextLng);
-        fixedTargetAngle = routeBearing;  // 매번 업데이트
+      if (deviceHeading === null || routeCoords.length < 2 || !currentLatLng) return;
 
-        const diff = Math.abs(fixedTargetAngle - deviceHeading);
-        const angleDiff = Math.min(diff, 360 - diff);
+      const [nextLat, nextLng] = routeCoords[closestIndex + 1] || routeCoords[closestIndex];
+      const routeBearing = calculateBearing(currentLatLng[0], currentLatLng[1], nextLat, nextLng);
+      fixedTargetAngle = routeBearing;
 
-        drawCompass(fixedTargetAngle, 30, deviceHeading);
+      const diff = Math.abs(fixedTargetAngle - deviceHeading);
+      const angleDiff = Math.min(diff, 360 - diff);
 
-        if (angleDiff > 30) {
-          speak("방향이 틀렸습니다. 기기를 천천히 돌려주세요.");
-        } else if (!announced.has(`heading${closestIndex}`)) {
-          announced.add(`heading${closestIndex}`);
-          speak("방향이 맞았습니다. 출발하세요.");
-          if (navigator.vibrate) navigator.vibrate([100, 100, 100]);
-        }
+      drawCompass(fixedTargetAngle, 30, deviceHeading);
+
+      if (angleDiff > 30) {
+        speak("방향이 틀렸습니다. 기기를 천천히 돌려주세요.");
+      } else if (!announced.has(`heading${closestIndex}`)) {
+        announced.add(`heading${closestIndex}`);
+        speak("방향이 맞았습니다. 출발하세요.");
+        if (navigator.vibrate) navigator.vibrate([100, 100, 100]);
       }
     }
 
@@ -185,6 +210,12 @@
       fixedTargetAngle = null;
       announced.clear();
       document.getElementById("progress-box").innerText = "진행률: -";
+
+      // 현재 위치로 출발지 다시 설정
+      if (currentLatLng) {
+        startMarker = L.marker(currentLatLng, { icon: blueIcon }).addTo(map);
+        speak("다시 시작합니다. 도착지를 선택해주세요.");
+      }
     }
 
     function getRoute(start, end) {
