@@ -80,15 +80,15 @@
       return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
     }
 
-    // ▶▶▶ 여기만 수정! 초록 부채꼴 -60도 시프트 ◀◀◀
+    // ▶▶▶ 여기만 수정! 초록 부채꼴 -120도(기존보다 60도 더) 시프트 ◀◀◀
     function drawCompass(targetAngle, tolerance, currentAngle) {
       const canvas = document.getElementById("compassCanvas");
       const ctx = canvas.getContext("2d");
       ctx.clearRect(0, 0, 200, 200);
       const centerX = 100, centerY = 100, radius = 90;
 
-      // 초록 부채꼴만 반시계로 60도 이동
-      const offset = -60;
+      // 초록 부채꼴을 -120도(반시계) 이동
+      const offset = -120;
       const adjTarget = (targetAngle + offset + 360) % 360;
       const startRad = ((adjTarget - tolerance + 360) % 360) * Math.PI / 180;
       const endRad = ((adjTarget + tolerance + 360) % 360) * Math.PI / 180;
