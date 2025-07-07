@@ -21,15 +21,13 @@
       border: none; border-radius: 5px; cursor: pointer;
     }
     #resetBtn { background-color: #c62828; color: white; }
+    #sensorBtn { background-color: #2e7d32; color: white; }
     #compass-container {
       position: absolute;
       bottom: 20px;
       left: 50%;
       transform: translateX(-50%);
       z-index: 1001;
-    }
-    #sensorBtn {
-      background-color: #2e7d32; color: white;
     }
   </style>
 </head>
@@ -46,40 +44,50 @@
 
   <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
   <script>
+    // 지도 초기화
     let map = L.map('map').setView([0, 0], 16);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       maxZoom: 19
     }).addTo(map);
 
-    let deviceHeading = null;
-    let fixedTargetAngle = null;
-    let currentLatLng = null;
+    // 전역 변수
     let routeCoords = [];
+    let turnPoints = []; // 턴 지점 목록
+    let currentLatLng = null;
     let routeLine = null;
     let traveledLine = null;
-    let currentMarker = null;
     let startMarker = null;
     let endMarker = null;
+    let currentMarker = null;
+    let fixedTargetAngle = null;
+    let deviceHeading = null;
     let closestIndex = 0;
-    const announced = new Set();
 
+    // 턴 음성 예고 중복 방지
+    const announced10 = new Set();
+    const announced5 = new Set();
+    const announcedTurnHere = new Set();
+
+    // 아이콘 정의
     const blueIcon = L.icon({
       iconUrl: 'https://maps.google.com/mapfiles/ms/icons/blue-dot.png',
       iconSize: [32, 32],
       iconAnchor: [16, 32]
     });
-
     const redIcon = L.icon({
       iconUrl: 'https://maps.google.com/mapfiles/ms/icons/red-dot.png',
       iconSize: [32, 32],
       iconAnchor: [16, 32]
     });
 
+    // 음성 안내 함수
     function speak(text) {
       const utterance = new SpeechSynthesisUtterance(text);
+      utterance.lang = 'ko-KR';
       speechSynthesis.speak(utterance);
     }
 
+    // 방위각 계산 함수
     function calculateBearing(lat1, lon1, lat2, lon2) {
       const toRad = deg => deg * Math.PI / 180;
       const toDeg = rad => rad * 180 / Math.PI;
@@ -90,6 +98,7 @@
       return (toDeg(Math.atan2(y, x)) + 360) % 360;
     }
 
+    // 나침반 그리기 함수 (다음 단계에 연결)
     function drawCompass(targetAngle, tolerance, currentAngle) {
       const canvas = document.getElementById("compassCanvas");
       const ctx = canvas.getContext("2d");
@@ -97,15 +106,16 @@
 
       const centerX = 100, centerY = 100, radius = 90;
 
+      // 외곽 원
       ctx.beginPath();
       ctx.arc(centerX, centerY, radius, 0, 2 * Math.PI);
       ctx.strokeStyle = "#555";
       ctx.lineWidth = 2;
       ctx.stroke();
 
+      // 목표 방향 범위 (초록색 부채꼴)
       const startRad = ((targetAngle - tolerance + 360) % 360) * Math.PI / 180;
       const endRad = ((targetAngle + tolerance + 360) % 360) * Math.PI / 180;
-
       ctx.beginPath();
       ctx.moveTo(centerX, centerY);
       ctx.arc(centerX, centerY, radius, startRad, endRad);
@@ -113,6 +123,7 @@
       ctx.fillStyle = "rgba(0, 255, 0, 0.3)";
       ctx.fill();
 
+      // 현재 방향 (빨간 화살표)
       const angleRad = (currentAngle - 90) * Math.PI / 180;
       const x = centerX + radius * Math.cos(angleRad);
       const y = centerY + radius * Math.sin(angleRad);
@@ -132,6 +143,7 @@
       }
     }
 
+    // 방향 센서 권한 요청 (iOS 대응)
     function requestSensorPermission() {
       if (typeof DeviceOrientationEvent !== 'undefined' &&
           typeof DeviceOrientationEvent.requestPermission === 'function') {
@@ -148,7 +160,7 @@
             alert("권한 요청 중 오류 발생: " + err);
           });
       } else {
-        // Android 또는 구형 브라우저
+        // Android 또는 데스크탑
         window.addEventListener("deviceorientation", handleOrientation);
         alert("방향 센서가 자동으로 활성화되었습니다.");
       }
@@ -156,49 +168,86 @@
 
     document.getElementById("sensorBtn").addEventListener("click", requestSensorPermission);
 
+    // 턴 분석 함수: 회전 포인트 추출
+    function analyzeTurns(coords) {
+      const result = [];
+      for (let i = 1; i < coords.length - 1; i++) {
+        const [prevLat, prevLng] = coords[i - 1];
+        const [currLat, currLng] = coords[i];
+        const [nextLat, nextLng] = coords[i + 1];
+
+        const bearing1 = calculateBearing(prevLat, prevLng, currLat, currLng);
+        const bearing2 = calculateBearing(currLat, currLng, nextLat, nextLng);
+        let diff = bearing2 - bearing1;
+        if (diff > 180) diff -= 360;
+        if (diff < -180) diff += 360;
+
+        if (Math.abs(diff) >= 30) {
+          result.push({
+            index: i,
+            location: [currLat, currLng],
+            type: diff > 0 ? '우회전' : '좌회전',
+            angle: diff
+          });
+        }
+      }
+      return result;
+    }
+
+    // 거리 계산 함수 (단순 유클리드)
+    function distance(lat1, lon1, lat2, lon2) {
+      const R = 6371000; // Earth radius in m
+      const toRad = deg => deg * Math.PI / 180;
+      const dLat = toRad(lat2 - lat1);
+      const dLon = toRad(lon2 - lon1);
+      const a = Math.sin(dLat / 2) ** 2 +
+                Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
+                Math.sin(dLon / 2) ** 2;
+      return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    }
+
+    // 턴 예고 및 지점 도달 시 나침반 안내
+    function checkTurnAnnouncements() {
+      if (!currentLatLng || turnPoints.length === 0) return;
+
+      for (const turn of turnPoints) {
+        const d = distance(currentLatLng[0], currentLatLng[1], turn.location[0], turn.location[1]);
+
+        if (d < 12 && !announcedTurnHere.has(turn.index)) {
+          announcedTurnHere.add(turn.index);
+          speak(`여기서 ${turn.type} 하세요.`);
+          fixedTargetAngle = calculateBearing(
+            currentLatLng[0], currentLatLng[1],
+            turn.location[0], turn.location[1]
+          );
+          if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
+        } else if (d < 5 && !announced5.has(turn.index)) {
+          announced5.add(turn.index);
+          speak(`5미터 앞에서 ${turn.type} 하세요.`);
+        } else if (d < 10 && !announced10.has(turn.index)) {
+          announced10.add(turn.index);
+          speak(`10미터 앞에서 ${turn.type} 하세요.`);
+        }
+      }
+    }
+
+    // 방향 확인 및 나침반 정렬 안내
     function updateCompassIfReady() {
-      if (deviceHeading === null || routeCoords.length < 2 || !currentLatLng) return;
-
-      const [nextLat, nextLng] = routeCoords[closestIndex + 1] || routeCoords[closestIndex];
-      const routeBearing = calculateBearing(currentLatLng[0], currentLatLng[1], nextLat, nextLng);
-      fixedTargetAngle = routeBearing;
-
+      if (deviceHeading === null || fixedTargetAngle === null) return;
       const diff = Math.abs(fixedTargetAngle - deviceHeading);
       const angleDiff = Math.min(diff, 360 - diff);
-
       drawCompass(fixedTargetAngle, 30, deviceHeading);
 
       if (angleDiff > 30) {
         speak("방향이 틀렸습니다. 기기를 천천히 돌려주세요.");
-      } else if (!announced.has(`heading${closestIndex}`)) {
-        announced.add(`heading${closestIndex}`);
-        speak("방향이 맞았습니다. 출발하세요.");
-        if (navigator.vibrate) navigator.vibrate([100, 100, 100]);
+      } else {
+        speak("방향이 맞았습니다. 이동하세요.");
+        fixedTargetAngle = null; // 정렬 완료 후 초기화
       }
     }
-
-    function updateProgress() {
-      if (routeCoords.length < 2 || !currentLatLng) return;
-      const total = routeCoords.length;
-      let minDist = Infinity;
-      for (let i = 0; i < total; i++) {
-        const dist = Math.hypot(routeCoords[i][0] - currentLatLng[0], routeCoords[i][1] - currentLatLng[1]);
-        if (dist < minDist) {
-          minDist = dist;
-          closestIndex = i;
-        }
-      }
-
-      const progress = Math.round((closestIndex / (total - 1)) * 100);
-      document.getElementById("progress-box").innerText = `진행률: ${progress}%`;
-
-      const traveled = routeCoords.slice(0, closestIndex + 1);
-      if (traveledLine) traveledLine.setLatLngs(traveled);
-      else traveledLine = L.polyline(traveled, { color: "green" }).addTo(map);
-    }
-
     function resetMap() {
       routeCoords = [];
+      turnPoints = [];
       if (routeLine) map.removeLayer(routeLine);
       if (traveledLine) map.removeLayer(traveledLine);
       if (startMarker) map.removeLayer(startMarker);
@@ -207,14 +256,17 @@
       traveledLine = null;
       startMarker = null;
       endMarker = null;
+      currentMarker = null;
       fixedTargetAngle = null;
-      announced.clear();
+      closestIndex = 0;
+      announced10.clear();
+      announced5.clear();
+      announcedTurnHere.clear();
       document.getElementById("progress-box").innerText = "진행률: -";
 
-      // 현재 위치로 출발지 다시 설정
       if (currentLatLng) {
         startMarker = L.marker(currentLatLng, { icon: blueIcon }).addTo(map);
-        speak("다시 시작합니다. 도착지를 선택해주세요.");
+        speak("출발지로 현재 위치가 설정되었습니다. 도착지를 선택해주세요.");
       }
     }
 
@@ -227,9 +279,19 @@
           routeCoords = coords;
           routeLine = L.polyline(coords, { color: 'blue' }).addTo(map);
           map.fitBounds(routeLine.getBounds());
-          speak("경로 안내를 시작합니다.");
+          speak("경로를 안내합니다. 첫 방향을 확인하세요.");
+          turnPoints = analyzeTurns(routeCoords);
         });
     }
+
+    map.on('click', function(e) {
+      if (!endMarker && startMarker) {
+        endMarker = L.marker(e.latlng, { icon: redIcon }).addTo(map);
+        const start = [startMarker.getLatLng().lat, startMarker.getLatLng().lng];
+        const end = [e.latlng.lat, e.latlng.lng];
+        getRoute(start, end);
+      }
+    });
 
     if (navigator.geolocation) {
       navigator.geolocation.watchPosition(pos => {
@@ -241,23 +303,36 @@
 
           if (!startMarker) {
             startMarker = L.marker(currentLatLng, { icon: blueIcon }).addTo(map);
-            speak("현재 위치를 출발지로 설정했습니다. 도착지를 선택해주세요.");
+            speak("현재 위치가 출발지로 설정되었습니다. 도착지를 선택해주세요.");
           }
         } else {
           currentMarker.setLatLng(currentLatLng);
         }
-        updateProgress();
+
+        // 진행률 업데이트
+        if (routeCoords.length > 1) {
+          let minDist = Infinity;
+          for (let i = 0; i < routeCoords.length; i++) {
+            const d = distance(currentLatLng[0], currentLatLng[1], routeCoords[i][0], routeCoords[i][1]);
+            if (d < minDist) {
+              minDist = d;
+              closestIndex = i;
+            }
+          }
+
+          const progress = Math.round((closestIndex / (routeCoords.length - 1)) * 100);
+          document.getElementById("progress-box").innerText = `진행률: ${progress}%`;
+
+          const traveled = routeCoords.slice(0, closestIndex + 1);
+          if (traveledLine) traveledLine.setLatLngs(traveled);
+          else traveledLine = L.polyline(traveled, { color: "green" }).addTo(map);
+
+          checkTurnAnnouncements();
+        }
       });
     }
 
-    map.on('click', function(e) {
-      if (!endMarker) {
-        endMarker = L.marker(e.latlng, { icon: redIcon }).addTo(map);
-        getRoute([startMarker.getLatLng().lat, startMarker.getLatLng().lng], [e.latlng.lat, e.latlng.lng]);
-      }
-    });
-
-    setInterval(updateCompassIfReady, 1000);
+    setInterval(updateCompassIfReady, 1500);
   </script>
 </body>
 </html>
