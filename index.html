@@ -44,17 +44,9 @@
 
   <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
   <script>
-    let map = L.map('map').setView([0, 0], 16);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(map);
-
-    let routeCoords = [], currentLatLng = null, currentMarker = null, startMarker = null, endMarker = null;
-    let routeLine = null, traveledLine = null, closestIndex = 0;
-    let deviceHeading = null, fixedTargetAngle = null;
-    let alreadyMatched = false;
-    let turnPoints = [], announced10 = new Set(), announced5 = new Set(), announcedTurnHere = new Set();
-
-    const blueIcon = L.icon({ iconUrl: 'https://maps.google.com/mapfiles/ms/icons/blue-dot.png', iconSize: [32, 32], iconAnchor: [16, 32] });
-    const redIcon = L.icon({ iconUrl: 'https://maps.google.com/mapfiles/ms/icons/red-dot.png', iconSize: [32, 32], iconAnchor: [16, 32] });
+    let fixedTargetAngle = null;
+    let deviceHeading = null;
+    let directionMatched = false;
 
     function speak(text) {
       const utterance = new SpeechSynthesisUtterance(text);
@@ -63,7 +55,8 @@
     }
 
     function calculateBearing(lat1, lon1, lat2, lon2) {
-      const toRad = deg => deg * Math.PI / 180, toDeg = rad => rad * 180 / Math.PI;
+      const toRad = deg => deg * Math.PI / 180;
+      const toDeg = rad => rad * 180 / Math.PI;
       const dLon = toRad(lon2 - lon1);
       const y = Math.sin(dLon) * Math.cos(toRad(lat2));
       const x = Math.cos(toRad(lat1)) * Math.sin(toRad(lat2)) -
@@ -71,50 +64,54 @@
       return (toDeg(Math.atan2(y, x)) + 360) % 360;
     }
 
-    function distance(lat1, lon1, lat2, lon2) {
-      const R = 6371000, toRad = deg => deg * Math.PI / 180;
-      const dLat = toRad(lat2 - lat1), dLon = toRad(lon2 - lon1);
-      const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
-      return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    }
-
     function drawCompass(targetAngle, tolerance, currentAngle) {
       const canvas = document.getElementById("compassCanvas");
       const ctx = canvas.getContext("2d");
       ctx.clearRect(0, 0, 200, 200);
       const centerX = 100, centerY = 100, radius = 90;
-      ctx.beginPath(); ctx.arc(centerX, centerY, radius, 0, 2 * Math.PI);
-      ctx.strokeStyle = "#555"; ctx.lineWidth = 2; ctx.stroke();
+
+      ctx.beginPath();
+      ctx.arc(centerX, centerY, radius, 0, 2 * Math.PI);
+      ctx.strokeStyle = "#555";
+      ctx.lineWidth = 2;
+      ctx.stroke();
+
       const startRad = ((targetAngle - tolerance + 360) % 360) * Math.PI / 180;
       const endRad = ((targetAngle + tolerance + 360) % 360) * Math.PI / 180;
-      ctx.beginPath(); ctx.moveTo(centerX, centerY);
+
+      ctx.beginPath();
+      ctx.moveTo(centerX, centerY);
       ctx.arc(centerX, centerY, radius, startRad, endRad);
       ctx.lineTo(centerX, centerY);
-      ctx.fillStyle = "rgba(0, 255, 0, 0.3)"; ctx.fill();
+      ctx.fillStyle = "rgba(0, 255, 0, 0.3)";
+      ctx.fill();
+
       const angleRad = (currentAngle - 90) * Math.PI / 180;
       const x = centerX + radius * Math.cos(angleRad);
       const y = centerY + radius * Math.sin(angleRad);
-      ctx.beginPath(); ctx.moveTo(centerX, centerY);
-      ctx.lineTo(x, y); ctx.strokeStyle = "red"; ctx.lineWidth = 4; ctx.stroke();
+
+      ctx.beginPath();
+      ctx.moveTo(centerX, centerY);
+      ctx.lineTo(x, y);
+      ctx.strokeStyle = "red";
+      ctx.lineWidth = 4;
+      ctx.stroke();
     }
 
     function updateCompassAlways() {
-      if (!currentLatLng || routeCoords.length < 2 || deviceHeading === null) return;
-      const next = routeCoords[Math.min(closestIndex + 1, routeCoords.length - 1)];
-      const routeBearing = calculateBearing(currentLatLng[0], currentLatLng[1], next[0], next[1]);
-      fixedTargetAngle = routeBearing;
+      if (deviceHeading === null || fixedTargetAngle === null) return;
       drawCompass(fixedTargetAngle, 30, deviceHeading);
       const diff = Math.abs(fixedTargetAngle - deviceHeading);
       const angleDiff = Math.min(diff, 360 - diff);
       if (angleDiff > 30) {
-        if (!alreadyMatched) {
-          speak("방향이 틀렸습니다. 기기를 천천히 돌려주세요.");
-          alreadyMatched = false;
+        if (directionMatched) {
+          speak("방향이 틀렸습니다. 화살표를 초록색 안으로 돌려주세요.");
+          directionMatched = false;
         }
       } else {
-        if (!alreadyMatched) {
-          speak("방향이 맞았습니다. 이동하세요.");
-          alreadyMatched = true;
+        if (!directionMatched) {
+          speak("방향이 맞았습니다. 계속 이동하세요.");
+          directionMatched = true;
         }
       }
     }
@@ -134,102 +131,8 @@
 
     document.getElementById("sensorBtn").addEventListener("click", requestSensorPermission);
 
-    function resetMap() {
-      routeCoords = []; turnPoints = [];
-      if (routeLine) map.removeLayer(routeLine);
-      if (traveledLine) map.removeLayer(traveledLine);
-      if (startMarker) map.removeLayer(startMarker);
-      if (endMarker) map.removeLayer(endMarker);
-      routeLine = traveledLine = startMarker = endMarker = null;
-      announced10.clear(); announced5.clear(); announcedTurnHere.clear();
-      document.getElementById("progress-box").innerText = "진행률: -";
-    }
-
-    function analyzeTurns(coords) {
-      const result = [];
-      for (let i = 1; i < coords.length - 1; i++) {
-        const [prevLat, prevLng] = coords[i - 1];
-        const [currLat, currLng] = coords[i];
-        const [nextLat, nextLng] = coords[i + 1];
-        const bearing1 = calculateBearing(prevLat, prevLng, currLat, currLng);
-        const bearing2 = calculateBearing(currLat, currLng, nextLat, nextLng);
-        let diff = bearing2 - bearing1;
-        if (diff > 180) diff -= 360;
-        if (diff < -180) diff += 360;
-        if (Math.abs(diff) >= 30) {
-          result.push({ index: i, location: [currLat, currLng], type: diff > 0 ? '우회전' : '좌회전', angle: diff });
-        }
-      }
-      return result;
-    }
-
-    function checkTurnAnnouncements() {
-      if (!currentLatLng || turnPoints.length === 0) return;
-      for (const turn of turnPoints) {
-        const d = distance(currentLatLng[0], currentLatLng[1], turn.location[0], turn.location[1]);
-        if (d < 12 && !announcedTurnHere.has(turn.index)) {
-          announcedTurnHere.add(turn.index);
-          speak(`여기서 ${turn.type} 하세요.`);
-          fixedTargetAngle = calculateBearing(currentLatLng[0], currentLatLng[1], turn.location[0], turn.location[1]);
-        } else if (d < 5 && !announced5.has(turn.index)) {
-          announced5.add(turn.index);
-          speak(`5미터 앞에서 ${turn.type} 하세요.`);
-        } else if (d < 10 && !announced10.has(turn.index)) {
-          announced10.add(turn.index);
-          speak(`10미터 앞에서 ${turn.type} 하세요.`);
-        }
-      }
-    }
-
-    function getRoute(start, end) {
-      const url = `https://router.project-osrm.org/route/v1/walking/${start[1]},${start[0]};${end[1]},${end[0]}?overview=full&geometries=geojson`;
-      fetch(url).then(res => res.json()).then(data => {
-        const coords = data.routes[0].geometry.coordinates.map(c => [c[1], c[0]]);
-        routeCoords = coords;
-        routeLine = L.polyline(coords, { color: 'blue' }).addTo(map);
-        map.fitBounds(routeLine.getBounds());
-        speak("경로를 안내합니다.");
-        turnPoints = analyzeTurns(coords);
-      });
-    }
-
-    map.on('click', function(e) {
-      if (!endMarker && startMarker) {
-        endMarker = L.marker(e.latlng, { icon: redIcon }).addTo(map);
-        getRoute([startMarker.getLatLng().lat, startMarker.getLatLng().lng], [e.latlng.lat, e.latlng.lng]);
-      }
-    });
-
-    if (navigator.geolocation) {
-      navigator.geolocation.watchPosition(pos => {
-        currentLatLng = [pos.coords.latitude, pos.coords.longitude];
-        if (!currentMarker) {
-          currentMarker = L.marker(currentLatLng).addTo(map);
-          map.setView(currentLatLng, 16);
-          if (!startMarker) {
-            startMarker = L.marker(currentLatLng, { icon: blueIcon }).addTo(map);
-            speak("출발지로 현재 위치를 설정했습니다. 도착지를 선택해주세요.");
-          }
-        } else currentMarker.setLatLng(currentLatLng);
-
-        if (routeCoords.length > 1) {
-          let minDist = Infinity;
-          for (let i = 0; i < routeCoords.length; i++) {
-            const d = distance(currentLatLng[0], currentLatLng[1], routeCoords[i][0], routeCoords[i][1]);
-            if (d < minDist) {
-              minDist = d;
-              closestIndex = i;
-            }
-          }
-          const progress = Math.round((closestIndex / (routeCoords.length - 1)) * 100);
-          document.getElementById("progress-box").innerText = `진행률: ${progress}%`;
-          const traveled = routeCoords.slice(0, closestIndex + 1);
-          if (traveledLine) traveledLine.setLatLngs(traveled);
-          else traveledLine = L.polyline(traveled, { color: "green" }).addTo(map);
-          checkTurnAnnouncements();
-        }
-      });
-    }
+    // 예시: 경로 방향 설정 (향후 경로에 따라 갱신 필요)
+    fixedTargetAngle = 90; // 동쪽 방향 (예시 값)
 
     setInterval(updateCompassAlways, 3000);
   </script>
