@@ -56,6 +56,13 @@
     let alreadyMatched = false, directionMsgLock = false;
     let turnPoints = [], announced10 = new Set(), announced5 = new Set(), announcedTurnHere = new Set();
 
+    // 가중치(위험구간) 예시 데이터
+    const dangerZones = [
+      { lat: 37.567, lon: 126.979, msg: "사고다발지역", icon: "<img src='https://cdn-icons-png.flaticon.com/512/564/564619.png' width='28'/>" },
+      { lat: 37.566, lon: 126.978, msg: "어린이 보호구역", icon: "<img src='https://cdn-icons-png.flaticon.com/512/1685/1685361.png' width='28'/>" },
+      { lat: 37.565, lon: 126.976, msg: "교차로", icon: "<img src='https://cdn-icons-png.flaticon.com/512/854/854878.png' width='28'/>" }
+    ];
+
     // GPS 오차 보정 변수
     let lastAcceptedLatLng = null;
 
@@ -146,6 +153,11 @@
       document.getElementById("progress-box").innerText = "진행률: -";
       lastDirectionState = null; alreadyMatched = false;
       lastAcceptedLatLng = null;
+      // 가중치 마커(턴, 위험지점) 초기화
+      if (window.weightedMarkers) {
+        window.weightedMarkers.forEach(m => map.removeLayer(m));
+      }
+      window.weightedMarkers = [];
     }
 
     function analyzeTurns(coords) {
@@ -164,6 +176,41 @@
         }
       }
       return result;
+    }
+
+    // ⭐⭐⭐ 가중치(턴/위험지점) 마커 지도에 모두 표시 ⭐⭐⭐
+    function showWeightedMarkers() {
+      if (window.weightedMarkers) window.weightedMarkers.forEach(m => map.removeLayer(m));
+      window.weightedMarkers = [];
+
+      // 1) 턴 포인트(좌/우회전)
+      turnPoints.forEach(tp => {
+        const iconHtml = tp.type === '우회전'
+          ? `<div style="font-size:28px;">↪️</div>`
+          : `<div style="font-size:28px;">↩️</div>`;
+        const marker = L.marker(tp.location, {
+          icon: L.divIcon({
+            className: 'custom-div-icon',
+            html: iconHtml,
+            iconSize: [32, 32],
+            iconAnchor: [16, 32]
+          })
+        }).addTo(map).bindPopup(tp.type + ' 구간');
+        window.weightedMarkers.push(marker);
+      });
+
+      // 2) 예시: 위험구간 아이콘도 추가
+      dangerZones.forEach(pt => {
+        const marker = L.marker([pt.lat, pt.lon], {
+          icon: L.divIcon({
+            className: 'custom-div-icon',
+            html: `<div>${pt.icon}</div>`,
+            iconSize: [32, 32],
+            iconAnchor: [16, 32]
+          })
+        }).addTo(map).bindPopup(pt.msg);
+        window.weightedMarkers.push(marker);
+      });
     }
 
     function checkTurnAnnouncements() {
@@ -195,6 +242,7 @@
         map.fitBounds(routeLine.getBounds());
         speak("경로를 안내합니다.");
         turnPoints = analyzeTurns(coords);
+        showWeightedMarkers(); // ⭐⭐⭐ 경로 그린 뒤 마커 한번에 표시 ⭐⭐⭐
       });
     }
 
@@ -252,7 +300,6 @@
         { enableHighAccuracy: true, maximumAge: 1000, timeout: 5000 }
       );
     }
-    // ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
     function updateCompassAlways() {
       if (deviceHeading === null || fixedTargetAngle === null) return;
@@ -273,37 +320,3 @@
   </script>
 </body>
 </html>
-// [1] 추가: turnPoints(분석된 턴 포인트)와 예시 위험 구간들
-function showWeightedMarkers() {
-  // 1) 턴 포인트(좌/우회전 지점) 마커 추가
-  turnPoints.forEach(tp => {
-    const iconHtml = tp.type === '우회전'
-      ? `<div style="font-size:28px;">↪️</div>`
-      : `<div style="font-size:28px;">↩️</div>`;
-    L.marker(tp.location, {
-      icon: L.divIcon({
-        className: 'custom-div-icon',
-        html: iconHtml,
-        iconSize: [32, 32],
-        iconAnchor: [16, 32]
-      })
-    }).addTo(map).bindPopup(tp.type + ' 구간');
-  });
-
-  // 2) (선택) 예시: 위험 구간(가중치 부여)도 배열로 추가 가능
-  const dangerZones = [
-    { lat: 37.567, lon: 126.979, msg: "사고다발지역", icon: "⚠️" },
-    { lat: 37.566, lon: 126.978, msg: "어린이 보호구역", icon: "🚸" },
-    { lat: 37.565, lon: 126.976, msg: "교차로", icon: "🚦" }
-  ];
-  dangerZones.forEach(pt => {
-    L.marker([pt.lat, pt.lon], {
-      icon: L.divIcon({
-        className: 'custom-div-icon',
-        html: `<div style="font-size:28px;">${pt.icon}</div>`,
-        iconSize: [32, 32],
-        iconAnchor: [16, 32]
-      })
-    }).addTo(map).bindPopup(pt.msg);
-  });
-}
