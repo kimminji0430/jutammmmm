@@ -44,7 +44,7 @@
 
   <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
   <script>
-    let map = L.map('map').setView([37.5665, 126.9780], 16);
+    let map = L.map('map').setView([36.665, 127.493], 15);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(map);
 
     const blueIcon = L.icon({ iconUrl: 'https://maps.google.com/mapfiles/ms/icons/blue-dot.png', iconSize: [32, 32], iconAnchor: [16, 32] });
@@ -53,14 +53,16 @@
     let routeCoords = [], currentLatLng = null, currentMarker = null, startMarker = null, endMarker = null;
     let routeLine = null, traveledLine = null, closestIndex = 0;
     let deviceHeading = null, fixedTargetAngle = null, lastDirectionState = null;
-    let alreadyMatched = false, directionMsgLock = false;
-    let turnPoints = [], announced10 = new Set(), announced5 = new Set(), announcedTurnHere = new Set();
+    let directionMsgLock = false;
 
-    // 가중치(위험구간) 예시 데이터
+    // [★] 위험지역(가중치) 데이터 (실제 파일 내용에 따라 좌표 추가)
     const dangerZones = [
-      { lat: 37.567, lon: 126.979, msg: "사고다발지역", icon: "<img src='https://cdn-icons-png.flaticon.com/512/564/564619.png' width='28'/>" },
-      { lat: 37.566, lon: 126.978, msg: "어린이 보호구역", icon: "<img src='https://cdn-icons-png.flaticon.com/512/1685/1685361.png' width='28'/>" },
-      { lat: 37.565, lon: 126.976, msg: "교차로", icon: "<img src='https://cdn-icons-png.flaticon.com/512/854/854878.png' width='28'/>" }
+      { lat: 36.658246, lon: 127.490456, msg: "위험지역", icon: "<img src='https://cdn-icons-png.flaticon.com/512/564/564619.png' width='28'/>" },
+      { lat: 36.661842, lon: 127.492287, msg: "위험지역", icon: "<img src='https://cdn-icons-png.flaticon.com/512/564/564619.png' width='28'/>" },
+      { lat: 36.664039, lon: 127.494221, msg: "위험지역", icon: "<img src='https://cdn-icons-png.flaticon.com/512/564/564619.png' width='28'/>" },
+      { lat: 36.667000, lon: 127.497210, msg: "위험지역", icon: "<img src='https://cdn-icons-png.flaticon.com/512/564/564619.png' width='28'/>" },
+      { lat: 36.669812, lon: 127.495777, msg: "위험지역", icon: "<img src='https://cdn-icons-png.flaticon.com/512/564/564619.png' width='28'/>" }
+      // 필요하면 추가!
     ];
 
     // GPS 오차 보정 변수
@@ -90,8 +92,9 @@
       return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
     }
 
-    // 초록 부채꼴을 -120도(반시계) 이동
+    // 초록 부채꼴을 ±15도(좁게!)
     function drawCompass(targetAngle, tolerance, currentAngle) {
+      tolerance = 15; // 허용 각도(±15°)
       const canvas = document.getElementById("compassCanvas");
       const ctx = canvas.getContext("2d");
       ctx.clearRect(0, 0, 200, 200);
@@ -143,65 +146,26 @@
     document.getElementById("sensorBtn").addEventListener("click", requestSensorPermission);
 
     function resetMap() {
-      routeCoords = []; turnPoints = [];
+      routeCoords = [];
       if (routeLine) map.removeLayer(routeLine);
       if (traveledLine) map.removeLayer(traveledLine);
       if (startMarker) map.removeLayer(startMarker);
       if (endMarker) map.removeLayer(endMarker);
       routeLine = traveledLine = startMarker = endMarker = null;
-      announced10.clear(); announced5.clear(); announcedTurnHere.clear();
       document.getElementById("progress-box").innerText = "진행률: -";
-      lastDirectionState = null; alreadyMatched = false;
+      lastDirectionState = null;
       lastAcceptedLatLng = null;
-      // 가중치 마커(턴, 위험지점) 초기화
-      if (window.weightedMarkers) {
-        window.weightedMarkers.forEach(m => map.removeLayer(m));
-      }
-      window.weightedMarkers = [];
+      // 위험구간 마커 초기화
+      if (window.dangerMarkers) window.dangerMarkers.forEach(m => map.removeLayer(m));
+      window.dangerMarkers = [];
     }
 
-    function analyzeTurns(coords) {
-      const result = [];
-      for (let i = 1; i < coords.length - 1; i++) {
-        const [prevLat, prevLng] = coords[i - 1];
-        const [currLat, currLng] = coords[i];
-        const [nextLat, nextLng] = coords[i + 1];
-        const bearing1 = calculateBearing(prevLat, prevLng, currLat, currLng);
-        const bearing2 = calculateBearing(currLat, currLng, nextLat, nextLng);
-        let diff = bearing2 - bearing1;
-        if (diff > 180) diff -= 360;
-        if (diff < -180) diff += 360;
-        if (Math.abs(diff) >= 30) {
-          result.push({ index: i, location: [currLat, currLng], type: diff > 0 ? '우회전' : '좌회전', angle: diff });
-        }
-      }
-      return result;
-    }
-
-    // ⭐⭐⭐ 가중치(턴/위험지점) 마커 지도에 모두 표시 ⭐⭐⭐
-    function showWeightedMarkers() {
-      if (window.weightedMarkers) window.weightedMarkers.forEach(m => map.removeLayer(m));
-      window.weightedMarkers = [];
-
-      // 1) 턴 포인트(좌/우회전)
-      turnPoints.forEach(tp => {
-        const iconHtml = tp.type === '우회전'
-          ? `<div style="font-size:28px;">↪️</div>`
-          : `<div style="font-size:28px;">↩️</div>`;
-        const marker = L.marker(tp.location, {
-          icon: L.divIcon({
-            className: 'custom-div-icon',
-            html: iconHtml,
-            iconSize: [32, 32],
-            iconAnchor: [16, 32]
-          })
-        }).addTo(map).bindPopup(tp.type + ' 구간');
-        window.weightedMarkers.push(marker);
-      });
-
-      // 2) 예시: 위험구간 아이콘도 추가
+    // ⭐⭐⭐ 위험지역(가중치) 마커만 지도에 표시 ⭐⭐⭐
+    function showDangerMarkers() {
+      if (window.dangerMarkers) window.dangerMarkers.forEach(m => map.removeLayer(m));
+      window.dangerMarkers = [];
       dangerZones.forEach(pt => {
-        const marker = L.marker([pt.lat, pt.lon], {
+        const marker = L.marker([Number(pt.lat), Number(pt.lon)], {
           icon: L.divIcon({
             className: 'custom-div-icon',
             html: `<div>${pt.icon}</div>`,
@@ -209,28 +173,8 @@
             iconAnchor: [16, 32]
           })
         }).addTo(map).bindPopup(pt.msg);
-        window.weightedMarkers.push(marker);
+        window.dangerMarkers.push(marker);
       });
-    }
-
-    function checkTurnAnnouncements() {
-      if (!currentLatLng || turnPoints.length === 0) return;
-      for (const turn of turnPoints) {
-        const d = distance(currentLatLng[0], currentLatLng[1], turn.location[0], turn.location[1]);
-        if (d < 12 && !announcedTurnHere.has(turn.index)) {
-          announcedTurnHere.add(turn.index);
-          speak(`여기서 ${turn.type} 하세요.`);
-          const nextIdx = Math.min(turn.index + 1, routeCoords.length - 1);
-          const newTarget = routeCoords[nextIdx];
-          fixedTargetAngle = calculateBearing(currentLatLng[0], currentLatLng[1], newTarget[0], newTarget[1]);
-        } else if (d < 5 && !announced5.has(turn.index)) {
-          announced5.add(turn.index);
-          speak(`5미터 앞에서 ${turn.type} 하세요.`);
-        } else if (d < 10 && !announced10.has(turn.index)) {
-          announced10.add(turn.index);
-          speak(`10미터 앞에서 ${turn.type} 하세요.`);
-        }
-      }
     }
 
     function getRoute(start, end) {
@@ -241,8 +185,7 @@
         routeLine = L.polyline(coords, { color: 'blue' }).addTo(map);
         map.fitBounds(routeLine.getBounds());
         speak("경로를 안내합니다.");
-        turnPoints = analyzeTurns(coords);
-        showWeightedMarkers(); // ⭐⭐⭐ 경로 그린 뒤 마커 한번에 표시 ⭐⭐⭐
+        showDangerMarkers(); // ⭐⭐⭐ 경로 그린 뒤 마커 한번에 표시 ⭐⭐⭐
       });
     }
 
@@ -288,7 +231,6 @@
             const traveled = routeCoords.slice(0, closestIndex + 1);
             if (traveledLine) traveledLine.setLatLngs(traveled);
             else traveledLine = L.polyline(traveled, { color: "green" }).addTo(map);
-            checkTurnAnnouncements();
           }
 
           if (routeCoords.length > 1 && closestIndex < routeCoords.length - 1) {
@@ -303,10 +245,10 @@
 
     function updateCompassAlways() {
       if (deviceHeading === null || fixedTargetAngle === null) return;
-      drawCompass(fixedTargetAngle, 30, deviceHeading);
+      drawCompass(fixedTargetAngle, 15, deviceHeading); // 허용각 15도로 좁게!
       const diff = Math.abs(fixedTargetAngle - deviceHeading);
       const angleDiff = Math.min(diff, 360 - diff);
-      const isCorrect = angleDiff <= 30;
+      const isCorrect = angleDiff <= 15;
       if (isCorrect !== lastDirectionState) {
         if (isCorrect) {
           speak("방향이 맞았습니다. 계속 이동하세요.");
@@ -317,6 +259,9 @@
       }
     }
     setInterval(updateCompassAlways, 2000);
+
+    // 지도 시작하자마자 위험구간 표시 (경로 없어도 항상)
+    showDangerMarkers();
   </script>
 </body>
 </html>
