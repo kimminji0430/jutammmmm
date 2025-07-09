@@ -132,7 +132,7 @@
 
     // ==== 카카오 키워드 장소 검색 (자바스크립트키 사용) ====
     async function searchCandidates(keyword, callback) {
-      const kakaoJSKey = "c3538b3d362494aa354799bac1a30973"; // ← 여기에 본인 JS 키 입력
+      const kakaoJSKey = "5149a6f2dc9c675321b19bbea6e0968a"; // ← 여기에 본인 JS 키 입력
       let lat = currentLatLng ? currentLatLng[0] : 36.665;
       let lon = currentLatLng ? currentLatLng[1] : 127.493;
       let url = `https://dapi.kakao.com/v2/local/search/keyword.json?query=${encodeURIComponent(keyword)}&y=${lat}&x=${lon}&radius=2000&size=5`;
