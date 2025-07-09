@@ -10,6 +10,7 @@
     #map { height: 100%; width: 100%; }
     .top-buttons {
       position: absolute; top: 10px; left: 10px; z-index: 1000;
+      display: none; /* 초기엔 숨김 */
     }
     #progress-box {
       position: absolute; top: 10px; right: 10px; z-index: 1000;
@@ -29,6 +30,21 @@
       transform: translateX(-50%);
       z-index: 1001;
     }
+    #micBtn {
+      position: absolute;
+      top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+      width: 140px; height: 140px; border-radius: 100px;
+      font-size: 60px; background: #1de9b6; color: white; border: none;
+      box-shadow: 0 0 20px #0004;
+      z-index: 2000;
+    }
+    #voiceStatus {
+      position: absolute; top: 67%; left: 50%; transform: translateX(-50%);
+      font-size: 1.2em; background: #fff9; padding: 10px 24px; border-radius: 20px;
+      z-index: 2100; text-align: center;
+      min-width: 160px;
+    }
   </style>
 </head>
 <body>
@@ -41,6 +57,8 @@
   <div id="compass-container">
     <canvas id="compassCanvas" width="200" height="200"></canvas>
   </div>
+  <button id="micBtn">🎤</button>
+  <div id="voiceStatus" style="display:none"></div>
 
   <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
   <script>
@@ -74,6 +92,10 @@
       { lat: 36.6634181065428, lon: 127.474129870281, msg: "위험지역" }
     ];
 
+    // 음성인식 + 후보안내 변수
+    let voiceStep = 0, candidates = [], selectedCand = null, finalLatLng = null;
+
+    // 음성 안내 (TTS)
     function speak(text) {
       if (directionMsgLock) return;
       const utterance = new SpeechSynthesisUtterance(text);
@@ -81,6 +103,144 @@
       speechSynthesis.speak(utterance);
       directionMsgLock = true;
       setTimeout(() => { directionMsgLock = false; }, 2000);
+    }
+
+    // --- 음성인식 STT, 보정, 후보 안내 ---
+    function startSpeechRecognition(promptText) {
+      let micBtn = document.getElementById('micBtn');
+      let voiceDiv = document.getElementById('voiceStatus');
+      micBtn.style.display = 'block';
+      voiceDiv.style.display = 'block';
+      voiceDiv.innerText = promptText;
+
+      if (!('webkitSpeechRecognition' in window)) {
+        alert('음성인식이 지원되지 않는 브라우저입니다.');
+        return;
+      }
+      let recognition = new webkitSpeechRecognition();
+      recognition.lang = 'ko-KR';
+      recognition.interimResults = false;
+      recognition.maxAlternatives = 1;
+      recognition.start();
+
+      recognition.onresult = (event) => {
+        let transcript = event.results[0][0].transcript.trim();
+        voiceDiv.innerText = "인식결과: " + transcript;
+        recognition.stop();
+        setTimeout(() => onSpeechResult(transcript), 800);
+      };
+      recognition.onerror = (event) => {
+        voiceDiv.innerText = "음성 인식 오류. 다시 시도하세요.";
+        recognition.stop();
+      };
+    }
+
+    function correctInput(txt) {
+      let t = txt.trim().replace(/\s+/g, "");
+      if (t === "야국" || t === "야꾹" || t === "약 국") t = "약국";
+      return t;
+    }
+
+    // 예시 후보 검색 (API 연동으로 교체 가능)
+    function findCandidates(keyword) {
+      if (keyword === "약국") {
+        // 실제로는 외부 API에서 반환된 lat/lon 정보 사용!
+        return [
+          { name: "국민약국", dist: 30, lat: 36.667707, lon: 127.494051 },
+          { name: "푸른약국", dist: 90, lat: 36.668119, lon: 127.485241 },
+          { name: "대원약국", dist: 160, lat: 36.668864, lon: 127.489874 }
+        ];
+      }
+      return [];
+    }
+
+    function onSpeechResult(transcript) {
+      let clean = correctInput(transcript);
+      let voiceDiv = document.getElementById('voiceStatus');
+      let micBtn = document.getElementById('micBtn');
+
+      // 0: 목적지 키워드 인식
+      if (voiceStep === 0) {
+        candidates = findCandidates(clean);
+        if (candidates.length === 0) {
+          speak("근처에 해당하는 장소가 없습니다. 다시 말씀해 주세요.");
+          setTimeout(() => startSpeechRecognition("도착지를 다시 말씀해 주세요."), 2000);
+          return;
+        }
+        let candText = candidates.map((c, i) => `${i + 1}번 ${c.name} ${c.dist}미터`).join(", ");
+        speak(`근처에 ${candText}가 있습니다. 원하는 번호를 말씀해 주세요.`);
+        voiceDiv.innerText = `후보: ${candText}\n번호 또는 이름으로 말씀하세요.`;
+        voiceStep = 1;
+        setTimeout(() => startSpeechRecognition("원하는 번호나 이름을 말씀해 주세요."), 3500);
+      }
+      // 1: 후보 중 선택
+      else if (voiceStep === 1) {
+        let num = parseInt(clean.replace(/[^0-9]/g, ""));
+        let chosen = null;
+        if (!isNaN(num) && num > 0 && num <= candidates.length) {
+          chosen = candidates[num - 1];
+        } else {
+          chosen = candidates.find(c => clean.includes(c.name.replace("약국", "")));
+        }
+        if (!chosen) {
+          speak("인식 결과에 해당하는 후보가 없습니다. 다시 말씀해 주세요.");
+          setTimeout(() => startSpeechRecognition("원하는 약국의 번호나 이름을 말씀해 주세요."), 2000);
+          return;
+        }
+        selectedCand = chosen;
+        speak(`${chosen.name}로 안내를 시작할까요? 예 또는 아니오로 대답해 주세요.`);
+        voiceDiv.innerText = `${chosen.name}로 안내 시작? (예/아니오)`;
+        voiceStep = 2;
+        setTimeout(() => startSpeechRecognition("예, 아니오로 대답해 주세요."), 3500);
+      }
+      // 2: 재확인
+      else if (voiceStep === 2) {
+        let yes = ["네", "예", "응", "맞아"];
+        if (yes.includes(clean)) {
+          speak(`${selectedCand.name}로 길 안내를 시작합니다.`);
+          finalLatLng = [selectedCand.lat, selectedCand.lon];
+          micBtn.style.display = 'none';
+          voiceDiv.style.display = 'none';
+          setTimeout(() => {
+            document.querySelector('.top-buttons').style.display = "block";
+            // 길찾기 시작
+            if (!startMarker && currentLatLng) {
+              startMarker = L.marker(currentLatLng, { icon: blueIcon }).addTo(map);
+            }
+            endMarker = L.marker(finalLatLng, { icon: redIcon }).addTo(map);
+            getRoute(currentLatLng, finalLatLng);
+          }, 1800);
+          voiceStep = 0;
+        } else {
+          speak("다시 처음부터 선택을 시작합니다.");
+          voiceStep = 0;
+          selectedCand = null;
+          setTimeout(() => startSpeechRecognition("도착지를 다시 말씀해 주세요."), 2000);
+        }
+      }
+    }
+
+    // 마이크 버튼 클릭 이벤트 (초기 only)
+    document.getElementById("micBtn").onclick = () => {
+      voiceStep = 0; candidates = []; selectedCand = null; finalLatLng = null;
+      startSpeechRecognition("도착지를 말씀해 주세요. 예: 약국");
+    };
+
+    // 위험지역 마커 표시
+    function showDangerMarkers() {
+      if (window.dangerMarkers) window.dangerMarkers.forEach(m => map.removeLayer(m));
+      window.dangerMarkers = [];
+      dangerZones.forEach(pt => {
+        const marker = L.marker([Number(pt.lat), Number(pt.lon)], {
+          icon: L.divIcon({
+            className: 'custom-div-icon',
+            html: `<img src="https://cdn-icons-png.flaticon.com/512/564/564619.png" width="16" height="16">`,
+            iconSize: [16, 16],
+            iconAnchor: [8, 8]
+          })
+        }).addTo(map).bindPopup(pt.msg);
+        window.dangerMarkers.push(marker);
+      });
     }
 
     function calculateBearing(lat1, lon1, lat2, lon2) {
@@ -161,27 +321,15 @@
       document.getElementById("progress-box").innerText = "진행률: -";
       lastDirectionState = null;
       lastAcceptedLatLng = null;
-      // 위험구간 마커 초기화 후 다시 표시
-      if (window.dangerMarkers) window.dangerMarkers.forEach(m => map.removeLayer(m));
-      window.dangerMarkers = [];
       showDangerMarkers();
-    }
-
-    // 위험지역 작고 정확하게!
-    function showDangerMarkers() {
-      if (window.dangerMarkers) window.dangerMarkers.forEach(m => map.removeLayer(m));
-      window.dangerMarkers = [];
-      dangerZones.forEach(pt => {
-        const marker = L.marker([Number(pt.lat), Number(pt.lon)], {
-          icon: L.divIcon({
-            className: 'custom-div-icon',
-            html: `<img src="https://cdn-icons-png.flaticon.com/512/564/564619.png" width="16" height="16">`,
-            iconSize: [16, 16],
-            iconAnchor: [8, 8]
-          })
-        }).addTo(map).bindPopup(pt.msg);
-        window.dangerMarkers.push(marker);
-      });
+      document.querySelector('.top-buttons').style.display = "none";
+      document.getElementById('micBtn').style.display = 'block';
+      document.getElementById('voiceStatus').style.display = 'block';
+      voiceStep = 0;
+      candidates = [];
+      selectedCand = null;
+      finalLatLng = null;
+      setTimeout(() => startSpeechRecognition("도착지를 말씀해 주세요. 예: 약국"), 1000);
     }
 
     function getRoute(start, end) {
@@ -195,13 +343,6 @@
         showDangerMarkers();
       });
     }
-
-    map.on('click', function(e) {
-      if (!endMarker && startMarker) {
-        endMarker = L.marker(e.latlng, { icon: redIcon }).addTo(map);
-        getRoute([startMarker.getLatLng().lat, startMarker.getLatLng().lng], [e.latlng.lat, e.latlng.lng]);
-      }
-    });
 
     // GPS 위치 트래킹
     if (navigator.geolocation) {
@@ -220,7 +361,6 @@
             map.setView(currentLatLng, 16);
             if (!startMarker) {
               startMarker = L.marker(currentLatLng, { icon: blueIcon }).addTo(map);
-              speak("출발지로 현재 위치를 설정했습니다. 도착지를 선택해주세요.");
             }
           } else currentMarker.setLatLng(currentLatLng);
 
