@@ -8,14 +8,21 @@
   <style>
     html, body { height: 100%; margin: 0; }
     #map { height: 100%; width: 100%; }
-    .top-buttons {
-      position: absolute; top: 10px; left: 10px; z-index: 1000;
-      display: none; /* 초기엔 숨김 */
+    #mic-btn {
+      position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+      z-index: 1002; background: #fff; border-radius: 50%; box-shadow: 0 4px 20px #0003;
+      width: 90px; height: 90px; border: none; font-size: 45px; display: flex; align-items: center; justify-content: center;
+      outline: none; cursor: pointer;
     }
+    #choice-list {
+      position: absolute; top: 15%; left: 50%; transform: translateX(-50%);
+      z-index: 1002; background: #fff; border-radius: 12px; padding: 18px; min-width: 220px;
+      box-shadow: 0 4px 20px #0003; font-size: 18px; display: none;
+    }
+    .top-buttons { position: absolute; top: 10px; left: 10px; z-index: 1000; }
     #progress-box {
       position: absolute; top: 10px; right: 10px; z-index: 1000;
-      background: rgba(255, 255, 255, 0.9); padding: 8px 12px;
-      border-radius: 8px; font-size: 14px; font-weight: bold;
+      background: rgba(255, 255, 255, 0.9); padding: 8px 12px; border-radius: 8px; font-size: 14px; font-weight: bold;
     }
     button {
       margin: 4px; padding: 10px 15px; font-size: 16px;
@@ -24,78 +31,39 @@
     #resetBtn { background-color: #c62828; color: white; }
     #sensorBtn { background-color: #2e7d32; color: white; }
     #compass-container {
-      position: absolute;
-      bottom: 20px;
-      left: 50%;
-      transform: translateX(-50%);
-      z-index: 1001;
-    }
-    #micBtn {
-      position: absolute;
-      top: 50%; left: 50%;
-      transform: translate(-50%, -50%);
-      width: 140px; height: 140px; border-radius: 100px;
-      font-size: 60px; background: #1de9b6; color: white; border: none;
-      box-shadow: 0 0 20px #0004;
-      z-index: 2000;
-    }
-    #voiceStatus {
-      position: absolute; top: 67%; left: 50%; transform: translateX(-50%);
-      font-size: 1.2em; background: #fff9; padding: 10px 24px; border-radius: 20px;
-      z-index: 2100; text-align: center;
-      min-width: 160px;
+      position: absolute; bottom: 20px; left: 50%;
+      transform: translateX(-50%); z-index: 1001;
     }
   </style>
 </head>
 <body>
   <div id="map"></div>
+  <button id="mic-btn">🎤</button>
+  <div id="choice-list"></div>
   <div class="top-buttons">
     <button id="sensorBtn">📱 방향 센서 활성화</button>
     <button id="resetBtn" onclick="resetMap()">🔄 초기화</button>
   </div>
   <div id="progress-box">진행률: -</div>
-  <div id="compass-container">
-    <canvas id="compassCanvas" width="200" height="200"></canvas>
-  </div>
-  <button id="micBtn">🎤</button>
-  <div id="voiceStatus" style="display:none"></div>
+  <div id="compass-container"><canvas id="compassCanvas" width="200" height="200"></canvas></div>
 
   <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
   <script>
-    // 지도 중심(청주시): 필요시 dangerZones에 맞춰 조정
+    // [1] 지도/기본 변수
     let map = L.map('map').setView([36.665, 127.493], 15);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(map);
 
     const blueIcon = L.icon({ iconUrl: 'https://maps.google.com/mapfiles/ms/icons/blue-dot.png', iconSize: [32, 32], iconAnchor: [16, 32] });
     const redIcon = L.icon({ iconUrl: 'https://maps.google.com/mapfiles/ms/icons/red-dot.png', iconSize: [32, 32], iconAnchor: [16, 32] });
-
     let routeCoords = [], currentLatLng = null, currentMarker = null, startMarker = null, endMarker = null;
     let routeLine = null, traveledLine = null, closestIndex = 0;
     let deviceHeading = null, fixedTargetAngle = null, lastDirectionState = null;
-    let directionMsgLock = false;
-    let lastAcceptedLatLng = null;
+    let directionMsgLock = false, lastAcceptedLatLng = null;
 
-    // ⭐ 위험지역 좌표: 실제 데이터로 교체 가능
-    const dangerZones = [
-      { lat: 36.6718218309183, lon: 127.48441647091, msg: "위험지역" },
-      { lat: 36.6691856859285, lon: 127.484526668822, msg: "위험지역" },
-      { lat: 36.6681198498837, lon: 127.485241335168, msg: "위험지역" },
-      { lat: 36.6664434295902, lon: 127.479875756191, msg: "위험지역" },
-      { lat: 36.6664882385441, lon: 127.479760574661, msg: "위험지역" },
-      { lat: 36.6643897168371, lon: 127.493174822168, msg: "위험지역" },
-      { lat: 36.6585208580266, lon: 127.514097203935, msg: "위험지역" },
-      { lat: 36.6665694566346, lon: 127.47992811047, msg: "위험지역" },
-      { lat: 36.6688643206019, lon: 127.489874115027, msg: "위험지역" },
-      { lat: 36.6712011365218, lon: 127.497653699119, msg: "위험지역" },
-      { lat: 36.672340736864, lon: 127.497715232727, msg: "위험지역" },
-      { lat: 36.671208751872, lon: 127.497474561309, msg: "위험지역" },
-      { lat: 36.6634181065428, lon: 127.474129870281, msg: "위험지역" }
-    ];
+    // [2] 위험지역 좌표 예시 (생략, 필요시 추가)
+    // ...
 
-    // 음성인식 + 후보안내 변수
-    let voiceStep = 0, candidates = [], selectedCand = null, finalLatLng = null;
-
-    // 음성 안내 (TTS)
+    // [3] 음성안내 함수
     function speak(text) {
       if (directionMsgLock) return;
       const utterance = new SpeechSynthesisUtterance(text);
@@ -103,144 +71,6 @@
       speechSynthesis.speak(utterance);
       directionMsgLock = true;
       setTimeout(() => { directionMsgLock = false; }, 2000);
-    }
-
-    // --- 음성인식 STT, 보정, 후보 안내 ---
-    function startSpeechRecognition(promptText) {
-      let micBtn = document.getElementById('micBtn');
-      let voiceDiv = document.getElementById('voiceStatus');
-      micBtn.style.display = 'block';
-      voiceDiv.style.display = 'block';
-      voiceDiv.innerText = promptText;
-
-      if (!('webkitSpeechRecognition' in window)) {
-        alert('음성인식이 지원되지 않는 브라우저입니다.');
-        return;
-      }
-      let recognition = new webkitSpeechRecognition();
-      recognition.lang = 'ko-KR';
-      recognition.interimResults = false;
-      recognition.maxAlternatives = 1;
-      recognition.start();
-
-      recognition.onresult = (event) => {
-        let transcript = event.results[0][0].transcript.trim();
-        voiceDiv.innerText = "인식결과: " + transcript;
-        recognition.stop();
-        setTimeout(() => onSpeechResult(transcript), 800);
-      };
-      recognition.onerror = (event) => {
-        voiceDiv.innerText = "음성 인식 오류. 다시 시도하세요.";
-        recognition.stop();
-      };
-    }
-
-    function correctInput(txt) {
-      let t = txt.trim().replace(/\s+/g, "");
-      if (t === "야국" || t === "야꾹" || t === "약 국") t = "약국";
-      return t;
-    }
-
-    // 예시 후보 검색 (API 연동으로 교체 가능)
-    function findCandidates(keyword) {
-      if (keyword === "약국") {
-        // 실제로는 외부 API에서 반환된 lat/lon 정보 사용!
-        return [
-          { name: "국민약국", dist: 30, lat: 36.667707, lon: 127.494051 },
-          { name: "푸른약국", dist: 90, lat: 36.668119, lon: 127.485241 },
-          { name: "대원약국", dist: 160, lat: 36.668864, lon: 127.489874 }
-        ];
-      }
-      return [];
-    }
-
-    function onSpeechResult(transcript) {
-      let clean = correctInput(transcript);
-      let voiceDiv = document.getElementById('voiceStatus');
-      let micBtn = document.getElementById('micBtn');
-
-      // 0: 목적지 키워드 인식
-      if (voiceStep === 0) {
-        candidates = findCandidates(clean);
-        if (candidates.length === 0) {
-          speak("근처에 해당하는 장소가 없습니다. 다시 말씀해 주세요.");
-          setTimeout(() => startSpeechRecognition("도착지를 다시 말씀해 주세요."), 2000);
-          return;
-        }
-        let candText = candidates.map((c, i) => `${i + 1}번 ${c.name} ${c.dist}미터`).join(", ");
-        speak(`근처에 ${candText}가 있습니다. 원하는 번호를 말씀해 주세요.`);
-        voiceDiv.innerText = `후보: ${candText}\n번호 또는 이름으로 말씀하세요.`;
-        voiceStep = 1;
-        setTimeout(() => startSpeechRecognition("원하는 번호나 이름을 말씀해 주세요."), 3500);
-      }
-      // 1: 후보 중 선택
-      else if (voiceStep === 1) {
-        let num = parseInt(clean.replace(/[^0-9]/g, ""));
-        let chosen = null;
-        if (!isNaN(num) && num > 0 && num <= candidates.length) {
-          chosen = candidates[num - 1];
-        } else {
-          chosen = candidates.find(c => clean.includes(c.name.replace("약국", "")));
-        }
-        if (!chosen) {
-          speak("인식 결과에 해당하는 후보가 없습니다. 다시 말씀해 주세요.");
-          setTimeout(() => startSpeechRecognition("원하는 약국의 번호나 이름을 말씀해 주세요."), 2000);
-          return;
-        }
-        selectedCand = chosen;
-        speak(`${chosen.name}로 안내를 시작할까요? 예 또는 아니오로 대답해 주세요.`);
-        voiceDiv.innerText = `${chosen.name}로 안내 시작? (예/아니오)`;
-        voiceStep = 2;
-        setTimeout(() => startSpeechRecognition("예, 아니오로 대답해 주세요."), 3500);
-      }
-      // 2: 재확인
-      else if (voiceStep === 2) {
-        let yes = ["네", "예", "응", "맞아"];
-        if (yes.includes(clean)) {
-          speak(`${selectedCand.name}로 길 안내를 시작합니다.`);
-          finalLatLng = [selectedCand.lat, selectedCand.lon];
-          micBtn.style.display = 'none';
-          voiceDiv.style.display = 'none';
-          setTimeout(() => {
-            document.querySelector('.top-buttons').style.display = "block";
-            // 길찾기 시작
-            if (!startMarker && currentLatLng) {
-              startMarker = L.marker(currentLatLng, { icon: blueIcon }).addTo(map);
-            }
-            endMarker = L.marker(finalLatLng, { icon: redIcon }).addTo(map);
-            getRoute(currentLatLng, finalLatLng);
-          }, 1800);
-          voiceStep = 0;
-        } else {
-          speak("다시 처음부터 선택을 시작합니다.");
-          voiceStep = 0;
-          selectedCand = null;
-          setTimeout(() => startSpeechRecognition("도착지를 다시 말씀해 주세요."), 2000);
-        }
-      }
-    }
-
-    // 마이크 버튼 클릭 이벤트 (초기 only)
-    document.getElementById("micBtn").onclick = () => {
-      voiceStep = 0; candidates = []; selectedCand = null; finalLatLng = null;
-      startSpeechRecognition("도착지를 말씀해 주세요. 예: 약국");
-    };
-
-    // 위험지역 마커 표시
-    function showDangerMarkers() {
-      if (window.dangerMarkers) window.dangerMarkers.forEach(m => map.removeLayer(m));
-      window.dangerMarkers = [];
-      dangerZones.forEach(pt => {
-        const marker = L.marker([Number(pt.lat), Number(pt.lon)], {
-          icon: L.divIcon({
-            className: 'custom-div-icon',
-            html: `<img src="https://cdn-icons-png.flaticon.com/512/564/564619.png" width="16" height="16">`,
-            iconSize: [16, 16],
-            iconAnchor: [8, 8]
-          })
-        }).addTo(map).bindPopup(pt.msg);
-        window.dangerMarkers.push(marker);
-      });
     }
 
     function calculateBearing(lat1, lon1, lat2, lon2) {
@@ -258,7 +88,6 @@
       return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
     }
 
-    // 부채꼴 ±12도(좁게)
     function drawCompass(targetAngle, tolerance, currentAngle) {
       tolerance = 12;
       const canvas = document.getElementById("compassCanvas");
@@ -321,15 +150,8 @@
       document.getElementById("progress-box").innerText = "진행률: -";
       lastDirectionState = null;
       lastAcceptedLatLng = null;
-      showDangerMarkers();
-      document.querySelector('.top-buttons').style.display = "none";
-      document.getElementById('micBtn').style.display = 'block';
-      document.getElementById('voiceStatus').style.display = 'block';
-      voiceStep = 0;
-      candidates = [];
-      selectedCand = null;
-      finalLatLng = null;
-      setTimeout(() => startSpeechRecognition("도착지를 말씀해 주세요. 예: 약국"), 1000);
+      document.getElementById("choice-list").style.display = "none";
+      document.getElementById("mic-btn").style.display = "flex";
     }
 
     function getRoute(start, end) {
@@ -340,11 +162,12 @@
         routeLine = L.polyline(coords, { color: 'blue' }).addTo(map);
         map.fitBounds(routeLine.getBounds());
         speak("경로를 안내합니다.");
-        showDangerMarkers();
+        document.getElementById("mic-btn").style.display = "none";
+        document.getElementById("choice-list").style.display = "none";
       });
     }
 
-    // GPS 위치 트래킹
+    // [4] GPS 위치 트래킹
     if (navigator.geolocation) {
       navigator.geolocation.watchPosition(
         pos => {
@@ -361,6 +184,7 @@
             map.setView(currentLatLng, 16);
             if (!startMarker) {
               startMarker = L.marker(currentLatLng, { icon: blueIcon }).addTo(map);
+              speak("출발지로 현재 위치를 설정했습니다. 도착지를 검색해주세요.");
             }
           } else currentMarker.setLatLng(currentLatLng);
 
@@ -407,7 +231,113 @@
     }
     setInterval(updateCompassAlways, 2000);
 
-    showDangerMarkers();
-  </script>
-</body>
-</html>
+    // [5] 음성 인식 & 카카오 API 검색 및 안내
+    const micBtn = document.getElementById("mic-btn");
+    const choiceListDiv = document.getElementById("choice-list");
+
+    let places = [];
+    let selectedPlace = null;
+
+    function correctKoreanSpacing(str) {
+      // 띄어쓰기 교정 간이버전(실제론 외부 라이브러리 필요)
+      return str.replace(/([가-힣])([A-Z])/g, "$1 $2").trim();
+    }
+
+    function startVoiceRecognition() {
+      if (!('webkitSpeechRecognition' in window)) {
+        alert('브라우저가 음성인식을 지원하지 않습니다.');
+        return;
+      }
+      micBtn.innerText = '🎤 듣는중...';
+      micBtn.disabled = true;
+      const recognition = new webkitSpeechRecognition();
+      recognition.lang = 'ko-KR';
+      recognition.interimResults = false;
+      recognition.maxAlternatives = 1;
+      recognition.start();
+
+      recognition.onresult = function(event) {
+        let transcript = event.results[0][0].transcript.trim();
+        transcript = correctKoreanSpacing(transcript);
+        speak('검색어: ' + transcript + ', 맞습니까?');
+        setTimeout(() => { searchPlace(transcript); }, 1800);
+      };
+      recognition.onerror = function() {
+        speak("음성 인식에 실패했습니다. 다시 시도해주세요.");
+        micBtn.innerText = '🎤';
+        micBtn.disabled = false;
+      };
+      recognition.onend = function() {
+        micBtn.innerText = '🎤';
+        micBtn.disabled = false;
+      };
+    }
+
+    async function searchPlace(keyword) {
+      // (실제 배포시 키 노출 위험, 서버프록시 추천) REST API 키!
+      const KAKAO_REST_API_KEY = "5149a6f2dc9c675321b19bbea6e0968a";
+      let location = currentLatLng ? `${currentLatLng[1]},${currentLatLng[0]}` : "127.493,36.665";
+      const url = `https://dapi.kakao.com/v2/local/search/keyword.json?query=${encodeURIComponent(keyword)}&y=${currentLatLng ? currentLatLng[0] : 36.665}&x=${currentLatLng ? currentLatLng[1] : 127.493}&radius=2000&size=5`;
+      const response = await fetch(url, {
+        headers: { "Authorization": "KakaoAK " + KAKAO_REST_API_KEY }
+      });
+      const data = await response.json();
+      if (data.documents && data.documents.length > 0) {
+        places = data.documents;
+        let listHtml = "<b>가까운 결과:</b><br>";
+        places.forEach((p, idx) => {
+          listHtml += `${idx+1}. ${p.place_name} (${p.road_address_name || p.address_name})<br>`;
+        });
+        listHtml += "<br>원하는 장소의 번호를 말씀해주세요.";
+        choiceListDiv.innerHTML = listHtml;
+        choiceListDiv.style.display = "block";
+        speak(places.map((p,i)=>`${i+1}번 ${p.place_name}`).join(', ') + "중에, 원하는 번호를 말씀해주세요.");
+        listenChoice();
+      } else {
+        choiceListDiv.innerHTML = "검색 결과가 없습니다.<br>다시 시도해주세요.";
+        choiceListDiv.style.display = "block";
+        speak("검색 결과가 없습니다. 다시 말씀해주세요.");
+        micBtn.style.display = "flex";
+      }
+    }
+
+    function listenChoice() {
+      if (!('webkitSpeechRecognition' in window)) return;
+      const recognition = new webkitSpeechRecognition();
+      recognition.lang = 'ko-KR';
+      recognition.interimResults = false;
+      recognition.maxAlternatives = 1;
+      recognition.start();
+
+      recognition.onresult = function(event) {
+        let transcript = event.results[0][0].transcript.trim();
+        let num = transcript.match(/[0-9]+/);
+        if (!num) {
+          // 번호가 아니면 이름 중에서 유사한 것 선택
+          let idx = places.findIndex(p => transcript.replace(/ /g,"").includes(p.place_name.replace(/ /g,"")));
+          if (idx >= 0) num = [idx+1];
+        }
+        if (num && num[0] >= 1 && num[0] <= places.length) {
+          selectedPlace = places[num[0]-1];
+          speak(`선택하신 곳은 ${selectedPlace.place_name}, 맞으면 잠시만 기다려주세요.`);
+          setTimeout(() => {
+            // 도착지 마커 표시 및 경로 안내
+            if (endMarker) { map.removeLayer(endMarker); }
+            endMarker = L.marker([selectedPlace.y, selectedPlace.x], { icon: redIcon }).addTo(map);
+            getRoute([startMarker.getLatLng().lat, startMarker.getLatLng().lng], [Number(selectedPlace.y), Number(selectedPlace.x)]);
+            choiceListDiv.style.display = "none";
+            micBtn.style.display = "none";
+          }, 2500);
+        } else {
+          speak("다시 번호를 말씀해주세요.");
+          listenChoice();
+        }
+      };
+      recognition.onerror = function() {
+        speak("선택 음성 인식에 실패했습니다. 다시 말씀해주세요.");
+        listenChoice();
+      };
+    }
+
+    micBtn.addEventListener("click", function() {
+      speak
