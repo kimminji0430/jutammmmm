@@ -9,11 +9,12 @@
     html, body { height: 100%; margin: 0; }
     #map { height: 100%; width: 100%; }
     .top-buttons {
-      position: absolute; top: 10px; left: 10px; z-index: 1000; display: none;
+      position: absolute; top: 10px; left: 10px; z-index: 1000;
+      display: none;
     }
     #progress-box {
       position: absolute; top: 10px; right: 10px; z-index: 1000;
-      background: rgba(255,255,255,0.9); padding: 8px 12px;
+      background: rgba(255, 255, 255, 0.9); padding: 8px 12px;
       border-radius: 8px; font-size: 14px; font-weight: bold;
     }
     button {
@@ -23,20 +24,26 @@
     #resetBtn { background-color: #c62828; color: white; }
     #sensorBtn { background-color: #2e7d32; color: white; }
     #compass-container {
-      position: absolute; bottom: 20px; left: 50%;
-      transform: translateX(-50%); z-index: 1001;
+      position: absolute;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 1001;
     }
     #micBtn {
       position: absolute;
-      top: 50%; left: 50%; transform: translate(-50%, -50%);
+      top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
       width: 140px; height: 140px; border-radius: 100px;
       font-size: 60px; background: #1de9b6; color: white; border: none;
-      box-shadow: 0 0 20px #0004; z-index: 2000;
+      box-shadow: 0 0 20px #0004;
+      z-index: 2000;
     }
     #voiceStatus {
       position: absolute; top: 67%; left: 50%; transform: translateX(-50%);
       font-size: 1.2em; background: #fff9; padding: 10px 24px; border-radius: 20px;
-      z-index: 2100; text-align: center; min-width: 160px;
+      z-index: 2100; text-align: center;
+      min-width: 160px;
     }
   </style>
 </head>
@@ -52,21 +59,23 @@
   </div>
   <button id="micBtn">🎤</button>
   <div id="voiceStatus" style="display:none"></div>
+
   <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
-  <!-- (선택) 카카오 JS SDK를 사용하는 경우, 아래는 필요 없음 -->
   <script>
-    // ===== 기본 지도 & 위험구간 =====
+    // 지도 중심(청주시): 필요시 dangerZones에 맞춰 조정
     let map = L.map('map').setView([36.665, 127.493], 15);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(map);
-    const blueIcon = L.icon({ iconUrl: 'https://maps.google.com/mapfiles/ms/icons/blue-dot.png', iconSize: [32,32], iconAnchor: [16,32] });
-    const redIcon = L.icon({ iconUrl: 'https://maps.google.com/mapfiles/ms/icons/red-dot.png', iconSize: [32,32], iconAnchor: [16,32] });
 
-    let routeCoords=[], currentLatLng=null, currentMarker=null, startMarker=null, endMarker=null;
-    let routeLine=null, traveledLine=null, closestIndex=0;
-    let deviceHeading=null, fixedTargetAngle=null, lastDirectionState=null;
-    let directionMsgLock=false, lastAcceptedLatLng=null;
+    const blueIcon = L.icon({ iconUrl: 'https://maps.google.com/mapfiles/ms/icons/blue-dot.png', iconSize: [32, 32], iconAnchor: [16, 32] });
+    const redIcon = L.icon({ iconUrl: 'https://maps.google.com/mapfiles/ms/icons/red-dot.png', iconSize: [32, 32], iconAnchor: [16, 32] });
 
-    // 위험지역 예시 (고정)
+    let routeCoords = [], currentLatLng = null, currentMarker = null, startMarker = null, endMarker = null;
+    let routeLine = null, traveledLine = null, closestIndex = 0;
+    let deviceHeading = null, fixedTargetAngle = null, lastDirectionState = null;
+    let directionMsgLock = false;
+    let lastAcceptedLatLng = null;
+
+    // 위험지역 예시(고정 데이터)
     const dangerZones = [
       { lat: 36.6718218309183, lon: 127.48441647091, msg: "위험지역" },
       { lat: 36.6691856859285, lon: 127.484526668822, msg: "위험지역" },
@@ -83,20 +92,20 @@
       { lat: 36.6634181065428, lon: 127.474129870281, msg: "위험지역" }
     ];
 
-    // ==== 음성인식, 안내, 후보 ====
-    let voiceStep=0, candidates=[], selectedCand=null, finalLatLng=null;
+    // 음성인식 + 후보안내 변수
+    let voiceStep = 0, candidates = [], selectedCand = null, finalLatLng = null;
 
-    // 최신 TTS: 안내가 끝나야 lock 풀림
+    // 음성 안내 (TTS)
     function speak(text) {
       if (directionMsgLock) return;
       const utterance = new SpeechSynthesisUtterance(text);
       utterance.lang = 'ko-KR';
-      utterance.onend = () => { directionMsgLock = false; };
       speechSynthesis.speak(utterance);
       directionMsgLock = true;
+      setTimeout(() => { directionMsgLock = false; }, 2000);
     }
 
-    // 음성인식
+    // --- 음성인식 STT, 보정, 후보 안내 ---
     function startSpeechRecognition(promptText) {
       let micBtn = document.getElementById('micBtn');
       let voiceDiv = document.getElementById('voiceStatus');
@@ -130,32 +139,26 @@
       return txt.trim().replace(/\s+/g, "");
     }
 
-    // ==== 카카오 키워드 장소 검색 (자바스크립트키 사용) ====
+    // 💡 카카오 REST 키 활용, 반경 20,000m
     async function searchCandidates(keyword, callback) {
-      const kakaoJSKey = "5149a6f2dc9c675321b19bbea6e0968a"; // ← 여기에 본인 JS 키 입력
+      const kakaoKey = "5149a6f2dc9c675321b19bbea6e0968a"; // REST API 키
       let lat = currentLatLng ? currentLatLng[0] : 36.665;
       let lon = currentLatLng ? currentLatLng[1] : 127.493;
-      let url = `https://dapi.kakao.com/v2/local/search/keyword.json?query=${encodeURIComponent(keyword)}&y=${lat}&x=${lon}&radius=2000&size=5`;
-      try {
-        const response = await fetch(url, {
-          headers: { "Authorization": "KakaoAK " + kakaoJSKey }
-        });
-        if (!response.ok) {
-          throw new Error("장소 API 호출 실패");
-        }
-        const data = await response.json();
-        if (data.documents && data.documents.length > 0) {
-          callback(data.documents.map(doc => ({
-            name: doc.place_name,
-            dist: Math.round(Number(doc.distance) || distance(lat, lon, Number(doc.y), Number(doc.x))),
-            lat: Number(doc.y),
-            lon: Number(doc.x),
-            addr: doc.road_address_name || doc.address_name
-          })));
-        } else {
-          callback([]);
-        }
-      } catch (e) {
+      let url = `https://dapi.kakao.com/v2/local/search/keyword.json?query=${encodeURIComponent(keyword)}&y=${lat}&x=${lon}&radius=20000&size=5`;
+
+      const response = await fetch(url, {
+        headers: { "Authorization": "KakaoAK " + kakaoKey }
+      });
+      const data = await response.json();
+      if (data.documents && data.documents.length > 0) {
+        callback(data.documents.map(doc => ({
+          name: doc.place_name,
+          dist: Math.round(Number(doc.distance) || distance(lat, lon, Number(doc.y), Number(doc.x))),
+          lat: Number(doc.y),
+          lon: Number(doc.x),
+          addr: doc.road_address_name || doc.address_name
+        })));
+      } else {
         callback([]);
       }
     }
@@ -164,7 +167,8 @@
       let clean = correctInput(transcript);
       let voiceDiv = document.getElementById('voiceStatus');
       let micBtn = document.getElementById('micBtn');
-      // 0: 목적지 키워드 인식 → 카카오 API 후보 검색
+
+      // 0: 목적지 키워드 인식 → 카카오 API로 후보 검색
       if (voiceStep === 0) {
         searchCandidates(clean, function(found) {
           candidates = found;
@@ -173,7 +177,7 @@
             setTimeout(() => startSpeechRecognition("도착지를 다시 말씀해 주세요."), 2000);
             return;
           }
-          let candText = candidates.map((c, i) => `${i+1}번 ${c.name} ${c.dist}미터`).join(", ");
+          let candText = candidates.map((c, i) => `${i + 1}번 ${c.name} ${c.dist}미터`).join(", ");
           speak(`근처에 ${candText}가 있습니다. 원하는 번호를 말씀해 주세요.`);
           voiceDiv.innerText = `후보: ${candText}\n번호 또는 이름으로 말씀하세요.`;
           voiceStep = 1;
@@ -187,6 +191,7 @@
         if (!isNaN(num) && num > 0 && num <= candidates.length) {
           chosen = candidates[num - 1];
         } else {
+          // 이름 유사성(띄어쓰기/오타 등) 비교
           chosen = candidates.find(c => clean.includes(c.name.replace(/\s/g, "")));
         }
         if (!chosen) {
@@ -202,7 +207,7 @@
       }
       // 2: 재확인
       else if (voiceStep === 2) {
-        let yes = ["네","예","응","맞아","예스","okay","좋아"];
+        let yes = ["네", "예", "응", "맞아", "예스", "okay", "좋아"];
         if (yes.some(word => clean.includes(word))) {
           speak(`${selectedCand.name}로 길 안내를 시작합니다.`);
           finalLatLng = [selectedCand.lat, selectedCand.lon];
@@ -227,9 +232,9 @@
       }
     }
 
-    // 마이크 버튼 클릭
+    // 마이크 버튼 클릭 이벤트 (초기 only)
     document.getElementById("micBtn").onclick = () => {
-      voiceStep=0; candidates=[]; selectedCand=null; finalLatLng=null;
+      voiceStep = 0; candidates = []; selectedCand = null; finalLatLng = null;
       startSpeechRecognition("도착지를 말씀해 주세요. 예: 약국, 편의점, 카페");
     };
 
@@ -242,7 +247,8 @@
           icon: L.divIcon({
             className: 'custom-div-icon',
             html: `<img src="https://cdn-icons-png.flaticon.com/512/564/564619.png" width="16" height="16">`,
-            iconSize: [16,16], iconAnchor: [8,8]
+            iconSize: [16, 16],
+            iconAnchor: [8, 8]
           })
         }).addTo(map).bindPopup(pt.msg);
         window.dangerMarkers.push(marker);
@@ -260,29 +266,45 @@
     function distance(lat1, lon1, lat2, lon2) {
       const R = 6371000, toRad = deg => deg * Math.PI / 180;
       const dLat = toRad(lat2 - lat1), dLon = toRad(lon2 - lon1);
-      const a = Math.sin(dLat/2)**2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon/2)**2;
+      const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
       return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
     }
 
+    // 부채꼴 ±12도(좁게)
     function drawCompass(targetAngle, tolerance, currentAngle) {
       tolerance = 12;
       const canvas = document.getElementById("compassCanvas");
       const ctx = canvas.getContext("2d");
-      ctx.clearRect(0,0,200,200);
-      const centerX=100, centerY=100, radius=90;
+      ctx.clearRect(0, 0, 200, 200);
+      const centerX = 100, centerY = 100, radius = 90;
       const offset = -120;
       const adjTarget = (targetAngle + offset + 360) % 360;
-      const startRad = ((adjTarget-tolerance+360)%360) * Math.PI/180;
-      const endRad = ((adjTarget+tolerance+360)%360) * Math.PI/180;
-      ctx.beginPath(); ctx.arc(centerX,centerY,radius,0,2*Math.PI);
-      ctx.strokeStyle="#555"; ctx.lineWidth=2; ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(centerX,centerY);
-      ctx.arc(centerX,centerY,radius,startRad,endRad); ctx.lineTo(centerX,centerY);
-      ctx.fillStyle="rgba(0,255,0,0.3)"; ctx.fill();
-      const angleRad=(currentAngle-90)*Math.PI/180;
-      const x=centerX+radius*Math.cos(angleRad), y=centerY+radius*Math.sin(angleRad);
-      ctx.beginPath(); ctx.moveTo(centerX,centerY); ctx.lineTo(x,y);
-      ctx.strokeStyle="red"; ctx.lineWidth=4; ctx.stroke();
+      const startRad = ((adjTarget - tolerance + 360) % 360) * Math.PI / 180;
+      const endRad = ((adjTarget + tolerance + 360) % 360) * Math.PI / 180;
+
+      ctx.beginPath();
+      ctx.arc(centerX, centerY, radius, 0, 2 * Math.PI);
+      ctx.strokeStyle = "#555";
+      ctx.lineWidth = 2;
+      ctx.stroke();
+
+      ctx.beginPath();
+      ctx.moveTo(centerX, centerY);
+      ctx.arc(centerX, centerY, radius, startRad, endRad);
+      ctx.lineTo(centerX, centerY);
+      ctx.fillStyle = "rgba(0, 255, 0, 0.3)";
+      ctx.fill();
+
+      const angleRad = (currentAngle - 90) * Math.PI / 180;
+      const x = centerX + radius * Math.cos(angleRad);
+      const y = centerY + radius * Math.sin(angleRad);
+
+      ctx.beginPath();
+      ctx.moveTo(centerX, centerY);
+      ctx.lineTo(x, y);
+      ctx.strokeStyle = "red";
+      ctx.lineWidth = 4;
+      ctx.stroke();
     }
 
     function handleOrientation(event) {
@@ -309,23 +331,28 @@
       if (endMarker) map.removeLayer(endMarker);
       routeLine = traveledLine = startMarker = endMarker = null;
       document.getElementById("progress-box").innerText = "진행률: -";
-      lastDirectionState = null; lastAcceptedLatLng = null;
+      lastDirectionState = null;
+      lastAcceptedLatLng = null;
       showDangerMarkers();
       document.querySelector('.top-buttons').style.display = "none";
       document.getElementById('micBtn').style.display = 'block';
       document.getElementById('voiceStatus').style.display = 'block';
-      voiceStep=0; candidates=[]; selectedCand=null; finalLatLng=null;
+      voiceStep = 0;
+      candidates = [];
+      selectedCand = null;
+      finalLatLng = null;
       setTimeout(() => startSpeechRecognition("도착지를 말씀해 주세요. 예: 약국, 편의점, 카페"), 1000);
     }
 
     function getRoute(start, end) {
       const url = `https://router.project-osrm.org/route/v1/walking/${start[1]},${start[0]};${end[1]},${end[0]}?overview=full&geometries=geojson`;
-      fetch(url).then(res=>res.json()).then(data=>{
-        const coords = data.routes[0].geometry.coordinates.map(c=>[c[1],c[0]]);
-        routeCoords=coords;
-        routeLine = L.polyline(coords, { color:'blue' }).addTo(map);
+      fetch(url).then(res => res.json()).then(data => {
+        const coords = data.routes[0].geometry.coordinates.map(c => [c[1], c[0]]);
+        routeCoords = coords;
+        routeLine = L.polyline(coords, { color: 'blue' }).addTo(map);
         map.fitBounds(routeLine.getBounds());
-        speak("경로를 안내합니다."); showDangerMarkers();
+        speak("경로를 안내합니다.");
+        showDangerMarkers();
       });
     }
 
@@ -338,7 +365,9 @@
             const d = distance(lastAcceptedLatLng[0], lastAcceptedLatLng[1], newLatLng[0], newLatLng[1]);
             if (d > 30) return;
           }
-          lastAcceptedLatLng = newLatLng; currentLatLng = newLatLng;
+          lastAcceptedLatLng = newLatLng;
+          currentLatLng = newLatLng;
+
           if (!currentMarker) {
             currentMarker = L.marker(currentLatLng).addTo(map);
             map.setView(currentLatLng, 16);
@@ -346,11 +375,15 @@
               startMarker = L.marker(currentLatLng, { icon: blueIcon }).addTo(map);
             }
           } else currentMarker.setLatLng(currentLatLng);
+
           if (routeCoords.length > 1) {
             let minDist = Infinity;
             for (let i = 0; i < routeCoords.length; i++) {
               const d = distance(currentLatLng[0], currentLatLng[1], routeCoords[i][0], routeCoords[i][1]);
-              if (d < minDist) { minDist = d; closestIndex = i; }
+              if (d < minDist) {
+                minDist = d;
+                closestIndex = i;
+              }
             }
             const progress = Math.round((closestIndex / (routeCoords.length - 1)) * 100);
             document.getElementById("progress-box").innerText = `진행률: ${progress}%`;
@@ -358,6 +391,7 @@
             if (traveledLine) traveledLine.setLatLngs(traveled);
             else traveledLine = L.polyline(traveled, { color: "green" }).addTo(map);
           }
+
           if (routeCoords.length > 1 && closestIndex < routeCoords.length - 1) {
             const next = routeCoords[closestIndex + 1];
             fixedTargetAngle = calculateBearing(currentLatLng[0], currentLatLng[1], next[0], next[1]);
