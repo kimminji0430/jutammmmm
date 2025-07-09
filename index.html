@@ -5,6 +5,8 @@
   <title>우리 동네 경로 안내</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+  <!-- [여기에 카카오 자바스크립트 키 입력, 꼭 본인 키로!] -->
+  <script src="https://dapi.kakao.com/v2/maps/sdk.js?appkey=c3538b3d362494aa354799bac1a30973&libraries=services"></script>
   <style>
     html, body { height: 100%; margin: 0; }
     #map { height: 100%; width: 100%; }
@@ -53,9 +55,8 @@
   <button id="micBtn">🎤</button>
   <div id="voiceStatus" style="display:none"></div>
   <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
-  <!-- (선택) 카카오 JS SDK를 사용하는 경우, 아래는 필요 없음 -->
   <script>
-    // ===== 기본 지도 & 위험구간 =====
+    // ===== 지도 & 위험구간 =====
     let map = L.map('map').setView([36.665, 127.493], 15);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(map);
     const blueIcon = L.icon({ iconUrl: 'https://maps.google.com/mapfiles/ms/icons/blue-dot.png', iconSize: [32,32], iconAnchor: [16,32] });
@@ -86,7 +87,7 @@
     // ==== 음성인식, 안내, 후보 ====
     let voiceStep=0, candidates=[], selectedCand=null, finalLatLng=null;
 
-    // 최신 TTS: 안내가 끝나야 lock 풀림
+    // TTS
     function speak(text) {
       if (directionMsgLock) return;
       const utterance = new SpeechSynthesisUtterance(text);
@@ -130,24 +131,17 @@
       return txt.trim().replace(/\s+/g, "");
     }
 
-    // ==== 카카오 키워드 장소 검색 (자바스크립트키 사용) ====
-    async function searchCandidates(keyword, callback) {
-      const kakaoJSKey = "c3538b3d362494aa354799bac1a30973"; // ← 여기에 본인 JS 키 입력
+    // ==== [수정] 카카오 JS SDK로 장소 검색 ====
+    function searchCandidates(keyword, callback) {
       let lat = currentLatLng ? currentLatLng[0] : 36.665;
       let lon = currentLatLng ? currentLatLng[1] : 127.493;
-      let url = `https://dapi.kakao.com/v2/local/search/keyword.json?query=${encodeURIComponent(keyword)}&y=${lat}&x=${lon}&radius=2000&size=5`;
-      try {
-        const response = await fetch(url, {
-          headers: { "Authorization": "KakaoAK " + kakaoJSKey }
-        });
-        if (!response.ok) {
-          throw new Error("장소 API 호출 실패");
-        }
-        const data = await response.json();
-        if (data.documents && data.documents.length > 0) {
-          callback(data.documents.map(doc => ({
+      let ps = new kakao.maps.services.Places();
+      let loc = new kakao.maps.LatLng(lat, lon);
+      ps.keywordSearch(keyword, function(data, status) {
+        if (status === kakao.maps.services.Status.OK) {
+          callback(data.map(doc => ({
             name: doc.place_name,
-            dist: Math.round(Number(doc.distance) || distance(lat, lon, Number(doc.y), Number(doc.x))),
+            dist: doc.distance ? Number(doc.distance) : 0,
             lat: Number(doc.y),
             lon: Number(doc.x),
             addr: doc.road_address_name || doc.address_name
@@ -155,9 +149,7 @@
         } else {
           callback([]);
         }
-      } catch (e) {
-        callback([]);
-      }
+      }, { location: loc, radius: 2000, size: 5 });
     }
 
     function onSpeechResult(transcript) {
