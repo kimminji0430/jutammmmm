@@ -265,39 +265,34 @@
       return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
     }
 
-    // == 여기서부터 방향 안내 부분 ==
+    // == 나침반(부채꼴=목표, 침=현위치), offset 없이
     function drawCompass(targetAngle, tolerance, currentAngle) {
       tolerance = 12;
       const canvas = document.getElementById("compassCanvas");
       const ctx = canvas.getContext("2d");
       ctx.clearRect(0,0,200,200);
       const centerX=100, centerY=100, radius=90;
-      const offset = -120;
-      // 부채꼴(목표방향)
-      const adjTarget = (targetAngle + offset + 360) % 360;
-      const startRad = ((adjTarget-tolerance+360)%360) * Math.PI/180;
-      const endRad = ((adjTarget+tolerance+360)%360) * Math.PI/180;
+      // 부채꼴(목표방향, 0도가 위쪽)
+      const startRad = ((targetAngle-tolerance-90)*Math.PI/180);
+      const endRad = ((targetAngle+tolerance-90)*Math.PI/180);
       ctx.beginPath(); ctx.arc(centerX,centerY,radius,0,2*Math.PI);
       ctx.strokeStyle="#555"; ctx.lineWidth=2; ctx.stroke();
       ctx.beginPath(); ctx.moveTo(centerX,centerY);
       ctx.arc(centerX,centerY,radius,startRad,endRad); ctx.lineTo(centerX,centerY);
       ctx.fillStyle="rgba(0,255,0,0.3)"; ctx.fill();
       // 침(현재방향)
-      const angleRad=((currentAngle + offset - 90)*Math.PI/180);
+      const angleRad=(currentAngle-90)*Math.PI/180;
       const x=centerX+radius*Math.cos(angleRad), y=centerY+radius*Math.sin(angleRad);
       ctx.beginPath(); ctx.moveTo(centerX,centerY); ctx.lineTo(x,y);
       ctx.strokeStyle="red"; ctx.lineWidth=4; ctx.stroke();
     }
 
+    // offset 없이 각도 비교
     function updateCompassAlways() {
       if (deviceHeading === null || fixedTargetAngle === null) return;
       const tolerance = 12;
-      const offset = -120;
       drawCompass(fixedTargetAngle, tolerance, deviceHeading);
-      // 비교도 offset 적용!
-      let adjTarget = (fixedTargetAngle + offset + 360) % 360;
-      let adjCurrent = (deviceHeading + offset + 360) % 360;
-      let diff = Math.abs(adjTarget - adjCurrent);
+      let diff = Math.abs(fixedTargetAngle - deviceHeading);
       let angleDiff = Math.min(diff, 360 - diff);
       let isCorrect = angleDiff <= tolerance;
       if (!isCorrect) {
@@ -336,7 +331,7 @@
         });
     }
 
-    // === 나머지 기능(위치 추적, 길찾기 등) 동일 ===
+    // 위치 추적/경로 안내 등은 기존 코드 동일
     function handleOrientation(event) {
       if (event.webkitCompassHeading !== undefined) {
         deviceHeading = event.webkitCompassHeading;
