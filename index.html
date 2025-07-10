@@ -39,7 +39,16 @@
       font-size: 1.2em; background: #fff9; padding: 10px 24px; border-radius: 20px;
       z-index: 2100; text-align: center; min-width: 160px;
     }
-    #search-box { position: absolute; top: 70px; left: 10px; z-index: 3000; background: #fff9; padding: 8px 16px; border-radius: 12px;}
+    #search-box {
+      position: absolute; left: 20px; bottom: 20px; z-index: 3000; background: #fff9;
+      border-radius: 8px; padding: 10px 12px; box-shadow: 0 0 6px #0002;
+    }
+    #results {
+      position: absolute; left: 20px; bottom: 70px; z-index: 3000; background: #fff9;
+      border-radius: 8px; padding: 6px 12px; min-width: 230px; list-style: none;
+      font-size: 1em; max-height: 180px; overflow-y: auto;
+    }
+    #results li { margin: 2px 0; }
   </style>
 </head>
 <body>
@@ -54,12 +63,11 @@
   </div>
   <button id="micBtn">🎤</button>
   <div id="voiceStatus" style="display:none"></div>
-  <!-- 🔽 장소 검색 박스 추가 -->
   <div id="search-box">
     <input type="text" id="query" placeholder="장소를 입력하세요" value="약국">
     <button onclick="searchPlaces()">검색</button>
-    <ul id="results"></ul>
   </div>
+  <ul id="results"></ul>
   <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
   <script>
     // ===== 지도 & 위험구간 =====
@@ -70,9 +78,8 @@
 
     let routeCoords=[], currentLatLng=null, currentMarker=null, startMarker=null, endMarker=null;
     let routeLine=null, traveledLine=null, closestIndex=0;
-    let deviceHeading=null, fixedTargetAngle=null, lastDirectionState=null;
+    let deviceHeading=null, fixedTargetAngle=null, lastDirectionState=null, lastToldCorrect=null;
     let directionMsgLock=false, lastAcceptedLatLng=null;
-    let lastToldCorrect=null; // 방향 음성 안내 중복 방지용
 
     // 위험지역 예시 (고정)
     const dangerZones = [
@@ -138,7 +145,7 @@
       return txt.trim().replace(/\s+/g, "");
     }
 
-    // ==== [수정] 카카오 JS SDK로 장소 검색 ====
+    // ==== 카카오 JS SDK로 장소 검색 ====
     function searchCandidates(keyword, callback) {
       let lat = currentLatLng ? currentLatLng[0] : 36.665;
       let lon = currentLatLng ? currentLatLng[1] : 127.493;
@@ -163,7 +170,6 @@
       let clean = correctInput(transcript);
       let voiceDiv = document.getElementById('voiceStatus');
       let micBtn = document.getElementById('micBtn');
-      // 0: 목적지 키워드 인식 → 카카오 API 후보 검색
       if (voiceStep === 0) {
         searchCandidates(clean, function(found) {
           candidates = found;
@@ -179,7 +185,6 @@
           setTimeout(() => startSpeechRecognition("원하는 번호나 이름을 말씀해 주세요."), 3500);
         });
       }
-      // 1: 후보 중 선택
       else if (voiceStep === 1) {
         let num = parseInt(clean.replace(/[^0-9]/g, ""));
         let chosen = null;
@@ -199,7 +204,6 @@
         voiceStep = 2;
         setTimeout(() => startSpeechRecognition("예, 아니오로 대답해 주세요."), 3500);
       }
-      // 2: 재확인
       else if (voiceStep === 2) {
         let yes = ["네","예","응","맞아","예스","okay","좋아"];
         if (yes.some(word => clean.includes(word))) {
@@ -209,7 +213,6 @@
           voiceDiv.style.display = 'none';
           setTimeout(() => {
             document.querySelector('.top-buttons').style.display = "block";
-            // 길찾기 시작
             if (!startMarker && currentLatLng) {
               startMarker = L.marker(currentLatLng, { icon: blueIcon }).addTo(map);
             }
@@ -226,7 +229,6 @@
       }
     }
 
-    // 마이크 버튼 클릭
     document.getElementById("micBtn").onclick = () => {
       voiceStep=0; candidates=[]; selectedCand=null; finalLatLng=null;
       startSpeechRecognition("도착지를 말씀해 주세요. 예: 약국, 편의점, 카페");
@@ -367,7 +369,7 @@
       );
     }
 
-    // ★★★ 방향 안내 Always: 틀렸으면 계속 안내, 맞았으면 안내(중복 방지)
+    // ★★★ 방향 안내 Always: 틀렸으면 2초마다 안내 반복, 맞았으면 한 번만 안내
     function updateCompassAlways() {
       if (deviceHeading === null || fixedTargetAngle === null) return;
       drawCompass(fixedTargetAngle, 12, deviceHeading);
@@ -375,31 +377,23 @@
       const angleDiff = Math.min(diff, 360 - diff);
       const isCorrect = angleDiff <= 12;
 
- function updateCompassAlways() {
-  if (deviceHeading === null || fixedTargetAngle === null) return;
-  drawCompass(fixedTargetAngle, 12, deviceHeading);
-  const diff = Math.abs(fixedTargetAngle - deviceHeading);
-  const angleDiff = Math.min(diff, 360 - diff);
-  const isCorrect = angleDiff <= 12;
-
-  if (!isCorrect) {
-    // ★★★ directionMsgLock만 해제됐으면 매번 반복 안내
-    if (!directionMsgLock) {
-      speak("방향이 틀렸습니다. 화살표를 초록색 안으로 돌려주세요.");
+      if (!isCorrect) {
+        // directionMsgLock이 풀리면 2초마다 안내 반복
+        if (!directionMsgLock) {
+          speak("방향이 틀렸습니다. 화살표를 초록색 안으로 돌려주세요.");
+        }
+        lastToldCorrect = false;
+      } else {
+        // 맞음은 한 번만
+        if (lastToldCorrect !== true && !directionMsgLock) {
+          speak("방향이 맞았습니다. 계속 이동하세요.");
+          lastToldCorrect = true;
+        }
+      }
     }
-    // lastToldCorrect를 false로 계속 유지
-    lastToldCorrect = false;
-  } else {
-    // 맞았을 때는 한 번만 안내
-    if (lastToldCorrect !== true && !directionMsgLock) {
-      speak("방향이 맞았습니다. 계속 이동하세요.");
-      lastToldCorrect = true;
-    }
-  }
-}
+    setInterval(updateCompassAlways, 2000);
 
-
-    // 장소 검색 함수
+    // ===== 검색 박스 기능 =====
     function searchPlaces() {
       let q = document.getElementById('query').value;
       let lat = currentLatLng ? currentLatLng[0] : 36.665;
@@ -420,6 +414,8 @@
           }
         });
     }
+
+    showDangerMarkers();
   </script>
 </body>
 </html>
