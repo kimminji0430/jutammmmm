@@ -369,24 +369,29 @@
       );
     }
 
-    // 방향 안내: 틀렸으면 2초마다 반복, 맞으면 1회만
-    function updateCompassAlways() {
-      if (deviceHeading === null || fixedTargetAngle === null) return;
-      drawCompass(fixedTargetAngle, 12, deviceHeading);
-      const diff = Math.abs(fixedTargetAngle - deviceHeading);
-      const angleDiff = Math.min(diff, 360 - diff);
-      const isCorrect = angleDiff <= 12;
-      if (!isCorrect) {
-        if (!directionMsgLock) {
-          speak("방향이 틀렸습니다. 화살표를 초록색 안으로 돌려주세요.");
-        }
-        lastToldCorrect = false;
-      } else {
-        if (lastToldCorrect !== true && !directionMsgLock) {
-          speak("방향이 맞았습니다. 계속 이동하세요.");
-          lastToldCorrect = true;
-        }
-      }
+   function updateCompassAlways() {
+  if (deviceHeading === null || fixedTargetAngle === null) return;
+  drawCompass(fixedTargetAngle, 12, deviceHeading);
+  // ↓ 오프셋과 비교 각도 일치화
+  const offset = -120;
+  let adjTarget = (fixedTargetAngle + offset + 360) % 360;
+  let adjCurrent = (deviceHeading + 360) % 360;
+  let diff = Math.abs(adjTarget - adjCurrent);
+  let angleDiff = Math.min(diff, 360 - diff);
+  let isCorrect = angleDiff <= 12; // tolerance
+  if (!isCorrect) {
+    if (!directionMsgLock) {
+      speak("방향이 틀렸습니다. 화살표를 초록색 안으로 돌려주세요.");
+    }
+    lastToldCorrect = false;
+  } else {
+    if (lastToldCorrect !== true && !directionMsgLock) {
+      speak("방향이 맞았습니다. 계속 이동하세요.");
+      lastToldCorrect = true;
+    }
+  }
+}
+
     }
     setInterval(updateCompassAlways, 2000);
 
