@@ -265,6 +265,7 @@
       return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
     }
 
+    // == 여기서부터 방향 안내 부분 ==
     function drawCompass(targetAngle, tolerance, currentAngle) {
       tolerance = 12;
       const canvas = document.getElementById("compassCanvas");
@@ -272,7 +273,7 @@
       ctx.clearRect(0,0,200,200);
       const centerX=100, centerY=100, radius=90;
       const offset = -120;
-      // 부채꼴 회전
+      // 부채꼴(목표방향)
       const adjTarget = (targetAngle + offset + 360) % 360;
       const startRad = ((adjTarget-tolerance+360)%360) * Math.PI/180;
       const endRad = ((adjTarget+tolerance+360)%360) * Math.PI/180;
@@ -281,13 +282,61 @@
       ctx.beginPath(); ctx.moveTo(centerX,centerY);
       ctx.arc(centerX,centerY,radius,startRad,endRad); ctx.lineTo(centerX,centerY);
       ctx.fillStyle="rgba(0,255,0,0.3)"; ctx.fill();
-      // 현재방향(침) - offset 없음
-      const angleRad=(currentAngle-90)*Math.PI/180;
+      // 침(현재방향)
+      const angleRad=((currentAngle + offset - 90)*Math.PI/180);
       const x=centerX+radius*Math.cos(angleRad), y=centerY+radius*Math.sin(angleRad);
       ctx.beginPath(); ctx.moveTo(centerX,centerY); ctx.lineTo(x,y);
       ctx.strokeStyle="red"; ctx.lineWidth=4; ctx.stroke();
     }
 
+    function updateCompassAlways() {
+      if (deviceHeading === null || fixedTargetAngle === null) return;
+      const tolerance = 12;
+      const offset = -120;
+      drawCompass(fixedTargetAngle, tolerance, deviceHeading);
+      // 비교도 offset 적용!
+      let adjTarget = (fixedTargetAngle + offset + 360) % 360;
+      let adjCurrent = (deviceHeading + offset + 360) % 360;
+      let diff = Math.abs(adjTarget - adjCurrent);
+      let angleDiff = Math.min(diff, 360 - diff);
+      let isCorrect = angleDiff <= tolerance;
+      if (!isCorrect) {
+        if (!directionMsgLock) {
+          speak("방향이 틀렸습니다. 화살표를 초록색 안으로 돌려주세요.");
+        }
+        lastToldCorrect = false;
+      } else {
+        if (lastToldCorrect !== true && !directionMsgLock) {
+          speak("방향이 맞았습니다. 계속 이동하세요.");
+          lastToldCorrect = true;
+        }
+      }
+    }
+    setInterval(updateCompassAlways, 2000);
+
+    // ===== 검색 박스 기능 =====
+    function searchPlaces() {
+      let q = document.getElementById('query').value;
+      let lat = currentLatLng ? currentLatLng[0] : 36.665;
+      let lon = currentLatLng ? currentLatLng[1] : 127.493;
+      fetch(`/search?query=${encodeURIComponent(q)}&lat=${lat}&lon=${lon}`)
+        .then(res => res.json())
+        .then(data => {
+          let ul = document.getElementById('results');
+          ul.innerHTML = "";
+          if(data.documents && data.documents.length > 0) {
+            data.documents.forEach(doc => {
+              let li = document.createElement('li');
+              li.textContent = `${doc.place_name} (${doc.address_name}) - ${doc.distance}m`;
+              ul.appendChild(li);
+            });
+          } else {
+            ul.innerHTML = "<li>근처에 해당하는 장소가 없습니다.</li>";
+          }
+        });
+    }
+
+    // === 나머지 기능(위치 추적, 길찾기 등) 동일 ===
     function handleOrientation(event) {
       if (event.webkitCompassHeading !== undefined) {
         deviceHeading = event.webkitCompassHeading;
@@ -369,56 +418,6 @@
         null,
         { enableHighAccuracy: true, maximumAge: 1000, timeout: 5000 }
       );
-    }
-
-    // 방향 안내: 틀렸으면 2초마다 반복, 맞으면 1회만
-    function updateCompassAlways() {
-      if (deviceHeading === null || fixedTargetAngle === null) return;
-      // offset은 draw/비교 둘 다 -120도 동일 적용
-      const tolerance = 12;
-      const offset = -120;
-      drawCompass(fixedTargetAngle, tolerance, deviceHeading);
-
-      // 침(화살표)와 부채꼴 중심 일치 기준 비교
-      let adjTarget = (fixedTargetAngle + offset + 360) % 360;
-      let adjCurrent = (deviceHeading + 360) % 360;
-      let diff = Math.abs(adjTarget - adjCurrent);
-      let angleDiff = Math.min(diff, 360 - diff);
-      let isCorrect = angleDiff <= tolerance;
-      if (!isCorrect) {
-        if (!directionMsgLock) {
-          speak("방향이 틀렸습니다. 화살표를 초록색 안으로 돌려주세요.");
-        }
-        lastToldCorrect = false;
-      } else {
-        if (lastToldCorrect !== true && !directionMsgLock) {
-          speak("방향이 맞았습니다. 계속 이동하세요.");
-          lastToldCorrect = true;
-        }
-      }
-    }
-    setInterval(updateCompassAlways, 2000);
-
-    // ===== 검색 박스 기능 =====
-    function searchPlaces() {
-      let q = document.getElementById('query').value;
-      let lat = currentLatLng ? currentLatLng[0] : 36.665;
-      let lon = currentLatLng ? currentLatLng[1] : 127.493;
-      fetch(`/search?query=${encodeURIComponent(q)}&lat=${lat}&lon=${lon}`)
-        .then(res => res.json())
-        .then(data => {
-          let ul = document.getElementById('results');
-          ul.innerHTML = "";
-          if(data.documents && data.documents.length > 0) {
-            data.documents.forEach(doc => {
-              let li = document.createElement('li');
-              li.textContent = `${doc.place_name} (${doc.address_name}) - ${doc.distance}m`;
-              ul.appendChild(li);
-            });
-          } else {
-            ul.innerHTML = "<li>근처에 해당하는 장소가 없습니다.</li>";
-          }
-        });
     }
 
     showDangerMarkers();
