@@ -78,7 +78,7 @@
 
     let routeCoords=[], currentLatLng=null, currentMarker=null, startMarker=null, endMarker=null;
     let routeLine=null, traveledLine=null, closestIndex=0;
-    let deviceHeading=null, fixedTargetAngle=null, lastDirectionState=null, lastToldCorrect=null;
+    let deviceHeading=null, fixedTargetAngle=null, lastToldCorrect=null;
     let directionMsgLock=false, lastAcceptedLatLng=null;
 
     // 위험지역 예시 (고정)
@@ -310,7 +310,7 @@
       if (endMarker) map.removeLayer(endMarker);
       routeLine = traveledLine = startMarker = endMarker = null;
       document.getElementById("progress-box").innerText = "진행률: -";
-      lastDirectionState = null; lastAcceptedLatLng = null;
+      lastToldCorrect = null; lastAcceptedLatLng = null;
       showDangerMarkers();
       document.querySelector('.top-buttons').style.display = "none";
       document.getElementById('micBtn').style.display = 'block';
@@ -369,22 +369,19 @@
       );
     }
 
-    // ★★★ 방향 안내 Always: 틀렸으면 2초마다 안내 반복, 맞았으면 한 번만 안내
+    // 방향 안내: 틀렸으면 2초마다 반복, 맞으면 1회만
     function updateCompassAlways() {
       if (deviceHeading === null || fixedTargetAngle === null) return;
       drawCompass(fixedTargetAngle, 12, deviceHeading);
       const diff = Math.abs(fixedTargetAngle - deviceHeading);
       const angleDiff = Math.min(diff, 360 - diff);
       const isCorrect = angleDiff <= 12;
-
       if (!isCorrect) {
-        // directionMsgLock이 풀리면 2초마다 안내 반복
         if (!directionMsgLock) {
           speak("방향이 틀렸습니다. 화살표를 초록색 안으로 돌려주세요.");
         }
         lastToldCorrect = false;
       } else {
-        // 맞음은 한 번만
         if (lastToldCorrect !== true && !directionMsgLock) {
           speak("방향이 맞았습니다. 계속 이동하세요.");
           lastToldCorrect = true;
