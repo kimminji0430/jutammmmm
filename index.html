@@ -272,6 +272,7 @@
       ctx.clearRect(0,0,200,200);
       const centerX=100, centerY=100, radius=90;
       const offset = -120;
+      // 부채꼴 회전
       const adjTarget = (targetAngle + offset + 360) % 360;
       const startRad = ((adjTarget-tolerance+360)%360) * Math.PI/180;
       const endRad = ((adjTarget+tolerance+360)%360) * Math.PI/180;
@@ -280,6 +281,7 @@
       ctx.beginPath(); ctx.moveTo(centerX,centerY);
       ctx.arc(centerX,centerY,radius,startRad,endRad); ctx.lineTo(centerX,centerY);
       ctx.fillStyle="rgba(0,255,0,0.3)"; ctx.fill();
+      // 현재방향(침) - offset 없음
       const angleRad=(currentAngle-90)*Math.PI/180;
       const x=centerX+radius*Math.cos(angleRad), y=centerY+radius*Math.sin(angleRad);
       ctx.beginPath(); ctx.moveTo(centerX,centerY); ctx.lineTo(x,y);
@@ -369,29 +371,31 @@
       );
     }
 
-   function updateCompassAlways() {
-  if (deviceHeading === null || fixedTargetAngle === null) return;
-  drawCompass(fixedTargetAngle, 12, deviceHeading);
-  // ↓ 오프셋과 비교 각도 일치화
-  const offset = -120;
-  let adjTarget = (fixedTargetAngle + offset + 360) % 360;
-  let adjCurrent = (deviceHeading + 360) % 360;
-  let diff = Math.abs(adjTarget - adjCurrent);
-  let angleDiff = Math.min(diff, 360 - diff);
-  let isCorrect = angleDiff <= 12; // tolerance
-  if (!isCorrect) {
-    if (!directionMsgLock) {
-      speak("방향이 틀렸습니다. 화살표를 초록색 안으로 돌려주세요.");
-    }
-    lastToldCorrect = false;
-  } else {
-    if (lastToldCorrect !== true && !directionMsgLock) {
-      speak("방향이 맞았습니다. 계속 이동하세요.");
-      lastToldCorrect = true;
-    }
-  }
-}
+    // 방향 안내: 틀렸으면 2초마다 반복, 맞으면 1회만
+    function updateCompassAlways() {
+      if (deviceHeading === null || fixedTargetAngle === null) return;
+      // offset은 draw/비교 둘 다 -120도 동일 적용
+      const tolerance = 12;
+      const offset = -120;
+      drawCompass(fixedTargetAngle, tolerance, deviceHeading);
 
+      // 침(화살표)와 부채꼴 중심 일치 기준 비교
+      let adjTarget = (fixedTargetAngle + offset + 360) % 360;
+      let adjCurrent = (deviceHeading + 360) % 360;
+      let diff = Math.abs(adjTarget - adjCurrent);
+      let angleDiff = Math.min(diff, 360 - diff);
+      let isCorrect = angleDiff <= tolerance;
+      if (!isCorrect) {
+        if (!directionMsgLock) {
+          speak("방향이 틀렸습니다. 화살표를 초록색 안으로 돌려주세요.");
+        }
+        lastToldCorrect = false;
+      } else {
+        if (lastToldCorrect !== true && !directionMsgLock) {
+          speak("방향이 맞았습니다. 계속 이동하세요.");
+          lastToldCorrect = true;
+        }
+      }
     }
     setInterval(updateCompassAlways, 2000);
 
