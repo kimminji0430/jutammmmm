@@ -341,7 +341,7 @@ function onSpeechResult(transcript) {
     // [수정 시작] updateCompassAlways 함수
 function updateCompassAlways() {
   if (deviceHeading === null || fixedTargetAngle === null) return;
-  const tolerance = 12;
+  const tolerance = 20;
   drawCompass(fixedTargetAngle, tolerance, deviceHeading);
   let diff = Math.abs(fixedTargetAngle - deviceHeading);
   let angleDiff = Math.min(diff, 360 - diff);
