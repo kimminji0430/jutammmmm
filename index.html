@@ -186,6 +186,8 @@ function onSpeechResult(transcript) {
     }
 
     let userWord = clean.replace(/[\s\W]/g, "");
+    console.log("[디버그] userWord:", userWord, "CATEGORY_WORDS.includes(userWord):", CATEGORY_WORDS.includes(userWord));
+
 
     // ★ 1. 카테고리 단어(범주)로만 말한 경우 → 무조건 번호 선택 안내
     if (CATEGORY_WORDS.includes(userWord)) {
