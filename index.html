@@ -148,6 +148,16 @@ function speak(text) {
     function correctInput(txt) {
       return txt.trim().replace(/\s+/g, "");
     }
+    function getJosa(word) {
+  // 한글의 마지막 글자를 추출해서 유니코드값 계산
+      const lastChar = word[word.length - 1];
+      const code = lastChar.charCodeAt(0);
+      if (code < 0xAC00 || code > 0xD7A3) return "로";
+      const jong = (code - 0xAC00) % 28;
+      if (jong === 0 || jong === 8) return "로";
+      return "으로";
+    }
+
 
     // ==== 카카오 JS SDK로 장소 검색 ====
     function searchCandidates(keyword, callback) {
@@ -206,8 +216,9 @@ function onSpeechResult(transcript) {
     );
     if (exactMatch) {
       selectedCand = exactMatch;
-      speak(`${exactMatch.name}로 안내를 시작할까요? 예 또는 아니오로 대답해 주세요.`);
-      voiceDiv.innerText = `${exactMatch.name}로 안내 시작? (예/아니오)`;
+      const josa = getJosa(exactMatch.name);
+      speak(`${exactMatch.name}${josa} 안내를 시작할까요? 예 또는 아니오로 대답해 주세요.`);
+      voiceDiv.innerText = `${exactMatch.name}${josa} 안내 시작? (예/아니오)`;
       voiceStep = 2;
       setTimeout(() => startSpeechRecognition("예, 아니오로 대답해 주세요."), 3500);
       return;
@@ -238,14 +249,15 @@ function onSpeechResult(transcript) {
       return;
     }
     selectedCand = chosen;
-    speak(`${chosen.name}로 안내를 시작할까요? 예 또는 아니오로 대답해 주세요.`);
-    voiceDiv.innerText = `${chosen.name}로 안내 시작? (예/아니오)`;
+    const josa = getJosa(chosen.name);
+    speak(`${chosen.name}${josa} 안내를 시작할까요? 예 또는 아니오로 대답해 주세요.`);
+    voiceDiv.innerText = `${chosen.name}${josa} 안내 시작? (예/아니오)`;
     voiceStep = 2;
     setTimeout(() => startSpeechRecognition("예, 아니오로 대답해 주세요."), 3500);
   } else if (voiceStep === 2) {
     let yes = ["네","예","응","맞아","예스","okay","좋아"];
     if (yes.some(word => clean.includes(word))) {
-      speak(`${selectedCand.name}로 길 안내를 시작합니다.`);
+      speak(`${selectedCand.name}${getJosa(selectedCand.name)} 길 안내를 시작합니다.`);
       finalLatLng = [selectedCand.lat, selectedCand.lon];
       micBtn.style.display = 'none';
       voiceDiv.style.display = 'none';
