@@ -171,21 +171,46 @@ function speak(text) {
       let clean = correctInput(transcript);
       let voiceDiv = document.getElementById('voiceStatus');
       let micBtn = document.getElementById('micBtn');
-      if (voiceStep === 0) {
-        searchCandidates(clean, function(found) {
-          candidates = found;
-          if (candidates.length === 0) {
-            speak("근처에 해당하는 장소가 없습니다. 다시 말씀해 주세요.");
-            setTimeout(() => startSpeechRecognition("도착지를 다시 말씀해 주세요."), 2000);
-            return;
-          }
-          let candText = candidates.map((c, i) => `${i+1}번 ${c.name} ${c.dist}미터`).join(", ");
-          speak(`근처에 ${candText}가 있습니다. 원하는 번호를 말씀해 주세요.`);
-          voiceDiv.innerText = `후보: ${candText}\n번호 또는 이름으로 말씀하세요.`;
-          voiceStep = 1;
-          setTimeout(() => startSpeechRecognition("원하는 번호나 이름을 말씀해 주세요."), 3500);
-        });
+  
+  // [수정 시작] 정확히 일치하는 후보가 있으면 바로 예/아니오로 안내
+  if (voiceStep === 0) {
+    searchCandidates(clean, function(found) {
+      candidates = found;
+      if (candidates.length === 0) {
+        speak("근처에 해당하는 장소가 없습니다. 다시 말씀해 주세요.");
+        setTimeout(() => startSpeechRecognition("도착지를 다시 말씀해 주세요."), 2000);
+        return;
       }
+
+      // === 여기서 정확히 일치하는 후보가 있는지 체크 ===
+      // 입력/후보 공백·특수문자 제거 후 비교
+      let userWord = clean.replace(/[\s\W]/g, "");
+      let exactMatch = candidates.find(c => 
+        c.name.replace(/[\s\W]/g, "") === userWord
+      );
+
+      if (exactMatch) {
+        selectedCand = exactMatch;
+        speak(`${exactMatch.name}로 안내를 시작할까요? 예 또는 아니오로 대답해 주세요.`);
+        voiceDiv.innerText = `${exactMatch.name}로 안내 시작? (예/아니오)`;
+        voiceStep = 2;
+        setTimeout(() => startSpeechRecognition("예, 아니오로 대답해 주세요."), 3500);
+        return;
+      }
+      // === 여기까지 추가 ===
+
+      // 기존 후보 나열 안내 방식 (정확히 일치 없으면)
+      let candText = candidates.map((c, i) => `${i+1}번 ${c.name} ${c.dist}미터`).join(", ");
+      speak(`근처에 ${candText}가 있습니다. 원하는 번호를 말씀해 주세요.`);
+      voiceDiv.innerText = `후보: ${candText}\n번호 또는 이름으로 말씀하세요.`;
+      voiceStep = 1;
+      setTimeout(() => startSpeechRecognition("원하는 번호나 이름을 말씀해 주세요."), 3500);
+    });
+  }
+  // [수정 끝]
+  // ... 이하 생략(voiceStep 1, 2는 동일)
+}
+
       else if (voiceStep === 1) {
         let num = parseInt(clean.replace(/[^0-9]/g, ""));
         let chosen = null;
