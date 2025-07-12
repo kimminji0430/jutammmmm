@@ -75,7 +75,7 @@
     let routeCoords=[], currentLatLng=null, currentMarker=null, startMarker=null, endMarker=null;
     let routeLine=null, traveledLine=null, closestIndex=0;
     let deviceHeading=null, fixedTargetAngle=null, lastToldCorrect=null;
-    let lastSpokenMsg = null; // 최근에 안내한 메시지
+    let directionMsgLock=false, lastAcceptedLatLng=null;
 
     // 위험지역 예시 (고정)
     const dangerZones = [
@@ -99,17 +99,12 @@
 
     // TTS
     function speak(text) {
-      // 음성이 진행중이라도 항상 바로 중단 후 새로 안내
-      if (speechSynthesis.speaking) {
-        speechSynthesis.cancel();
-      }
-      // 같은 메시지가 연속으로 중복 안내되지 않도록 방지
-      if (lastSpokenMsg === text) return;
-      lastSpokenMsg = text;
+      if (directionMsgLock) return;
       const utterance = new SpeechSynthesisUtterance(text);
       utterance.lang = 'ko-KR';
-      utterance.onend = () => { lastSpokenMsg = null; };
+      utterance.onend = () => { directionMsgLock = false; };
       speechSynthesis.speak(utterance);
+      directionMsgLock = true;
     }
 
     // 음성인식
@@ -268,7 +263,7 @@
 
     // == 나침반(부채꼴=목표, 침=현위치), offset 없이
     function drawCompass(targetAngle, tolerance, currentAngle) {
-      tolerance = 20;
+      tolerance = 12;
       const canvas = document.getElementById("compassCanvas");
       const ctx = canvas.getContext("2d");
       ctx.clearRect(0,0,200,200);
@@ -291,26 +286,24 @@
     // offset 없이 각도 비교
     function updateCompassAlways() {
       if (deviceHeading === null || fixedTargetAngle === null) return;
-      const tolerance = 20;
+      const tolerance = 12;
       drawCompass(fixedTargetAngle, tolerance, deviceHeading);
       let diff = Math.abs(fixedTargetAngle - deviceHeading);
       let angleDiff = Math.min(diff, 360 - diff);
       let isCorrect = angleDiff <= tolerance;
-      // 맞으면 바로 "맞았습니다", 틀리면 바로 "틀렸습니다"
-      if (isCorrect) {
-        if (lastToldCorrect !== true) {
+      if (!isCorrect) {
+        if (!directionMsgLock) {
+          speak("방향이 틀렸습니다. 화살표를 초록색 안으로 돌려주세요.");
+        }
+        lastToldCorrect = false;
+      } else {
+        if (lastToldCorrect !== true && !directionMsgLock) {
           speak("방향이 맞았습니다. 계속 이동하세요.");
           lastToldCorrect = true;
         }
-      } else {
-        if (lastToldCorrect !== false) {
-          speak("방향이 틀렸습니다. 화살표를 초록색 안으로 돌려주세요.");
-          lastToldCorrect = false;
-        }
       }
     }
-    // 바로바로 반응 (0.3초마다 체크)
-    setInterval(updateCompassAlways, 300);
+    setInterval(updateCompassAlways, 2000);
 
     // ===== 검색 박스 기능 =====
     function searchPlaces() {
@@ -421,4 +414,4 @@
     showDangerMarkers();
   </script>
 </body>
-</html>
+</html> 이 코드 구현은 다 됐는데 이제 자잘자잘한 문제 6가지를 해결하려고 해 하나하나 같이 해결해 보자 일단 이 코드가 전체 코드야
