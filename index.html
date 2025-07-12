@@ -222,6 +222,10 @@ function onSpeechResult(transcript) {
   });
 } else if (voiceStep === 1) {
     let num = parseInt(clean.replace(/[^0-9]/g, ""));
+    // "이번"을 2번으로 처리
+    if (clean.includes("이번")) {
+      num = 2;
+    }
     let chosen = null;
     if (!isNaN(num) && num > 0 && num <= candidates.length) {
       chosen = candidates[num - 1];
