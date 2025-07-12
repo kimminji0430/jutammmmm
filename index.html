@@ -200,6 +200,17 @@ function onSpeechResult(transcript) {
     console.log("[디버그] userWord:", userWord, "isCategory:", isCategory);
 
     if (isCategory) {
+  // 후보가 1개면 곧바로 예/아니오
+      if (candidates.length === 1) {
+        selectedCand = candidates[0];
+        const josa = getJosa(selectedCand.name);
+        speak(`${selectedCand.name}${josa} 안내를 시작할까요? 예 또는 아니오로 대답해 주세요.`);
+        voiceDiv.innerText = `${selectedCand.name}${josa} 안내 시작? (예/아니오)`;
+        voiceStep = 2;
+        setTimeout(() => startSpeechRecognition("예, 아니오로 대답해 주세요."), 3500);
+        return;
+      }
+  // 후보 2개 이상일 때만 번호 안내
       let candText = candidates.map((c, i) => `${i+1}번 ${c.name} ${c.dist}미터`).join(", ");
       speak(`근처에 ${candText}가 있습니다. 원하는 번호를 말씀해 주세요.`);
       voiceDiv.innerText = `후보: ${candText}\n번호 또는 이름으로 말씀하세요.`;
@@ -207,6 +218,7 @@ function onSpeechResult(transcript) {
       setTimeout(() => startSpeechRecognition("원하는 번호나 이름을 말씀해 주세요."), 3500);
       return;
     }
+
 
 
     // ★ 2. 고유명사(정확히 일치)로 말한 경우 → 예/아니오 안내
