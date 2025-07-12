@@ -66,6 +66,7 @@
  
   <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
   <script>
+    console.log("스크립트 실행!");
     // ===== 지도 & 위험구간 =====
     let map = L.map('map').setView([36.665, 127.493], 15);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(map);
