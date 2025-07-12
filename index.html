@@ -54,7 +54,7 @@
 <body>
   <div id="map"></div>
   <div class="top-buttons">
-    <button id="sensorBtn">📱 방향 센서 활성화</button>
+    
     <button id="resetBtn" onclick="resetMap()">🔄 초기화</button>
   </div>
   <div id="progress-box">진행률: -</div>
@@ -386,7 +386,10 @@ function updateCompassAlways() {
         }).catch(console.error);
       } else window.addEventListener("deviceorientation", handleOrientation);
     }
-    document.getElementById("sensorBtn").addEventListener("click", requestSensorPermission);
+    // [여기 추가]
+    window.addEventListener("DOMContentLoaded", () => {
+      requestSensorPermission();
+    });
 
     function resetMap() {
       routeCoords = [];
