@@ -186,17 +186,17 @@ function onSpeechResult(transcript) {
     }
 
     let userWord = clean.replace(/[\s\W]/g, "");
-let isCategory = CATEGORY_WORDS.some(cat => cat.replace(/[\s\W]/g, "") === userWord);
-console.log("[디버그] userWord:", userWord, "isCategory:", isCategory);
+    let isCategory = CATEGORY_WORDS.some(cat => cat.replace(/[\s\W]/g, "") === userWord);
+    console.log("[디버그] userWord:", userWord, "isCategory:", isCategory);
 
-if (isCategory) {
-  let candText = candidates.map((c, i) => `${i+1}번 ${c.name} ${c.dist}미터`).join(", ");
-  speak(`근처에 ${candText}가 있습니다. 원하는 번호를 말씀해 주세요.`);
-  voiceDiv.innerText = `후보: ${candText}\n번호 또는 이름으로 말씀하세요.`;
-  voiceStep = 1;
-  setTimeout(() => startSpeechRecognition("원하는 번호나 이름을 말씀해 주세요."), 3500);
-  return;
-}
+    if (isCategory) {
+      let candText = candidates.map((c, i) => `${i+1}번 ${c.name} ${c.dist}미터`).join(", ");
+      speak(`근처에 ${candText}가 있습니다. 원하는 번호를 말씀해 주세요.`);
+      voiceDiv.innerText = `후보: ${candText}\n번호 또는 이름으로 말씀하세요.`;
+      voiceStep = 1;
+      setTimeout(() => startSpeechRecognition("원하는 번호나 이름을 말씀해 주세요."), 3500);
+      return;
+    }
 
 
     // ★ 2. 고유명사(정확히 일치)로 말한 경우 → 예/아니오 안내
