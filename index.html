@@ -147,25 +147,37 @@
     }
 
     // ==== 카카오 JS SDK로 장소 검색 ====
-    function searchCandidates(keyword, callback) {
-      let lat = currentLatLng ? currentLatLng[0] : 36.665;
-      let lon = currentLatLng ? currentLatLng[1] : 127.493;
-      let ps = new kakao.maps.services.Places();
-      let loc = new kakao.maps.LatLng(lat, lon);
-      ps.keywordSearch(keyword, function(data, status) {
-        if (status === kakao.maps.services.Status.OK) {
-          callback(data.map(doc => ({
+function searchCandidates(keyword, callback) {
+  let lat = currentLatLng ? currentLatLng[0] : 36.665;
+  let lon = currentLatLng ? currentLatLng[1] : 127.493;
+  let ps = new kakao.maps.services.Places();
+  let loc = new kakao.maps.LatLng(lat, lon);
+  ps.keywordSearch(keyword, function(data, status) {
+    if (status === kakao.maps.services.Status.OK) {
+      // ==== 중복 제거 추가 ====
+      const seen = new Set();
+      const filtered = [];
+      data.forEach(doc => {
+        // 이름+주소 조합으로 유일성 체크
+        const key = doc.place_name + (doc.road_address_name || doc.address_name || "");
+        if (!seen.has(key)) {
+          seen.add(key);
+          filtered.push({
             name: doc.place_name,
             dist: doc.distance ? Number(doc.distance) : 0,
             lat: Number(doc.y),
             lon: Number(doc.x),
             addr: doc.road_address_name || doc.address_name
-          })));
-        } else {
-          callback([]);
+          });
         }
-      }, { location: loc, radius: 2000, size: 5 });
+      });
+      callback(filtered);
+    } else {
+      callback([]);
     }
+  }, { location: loc, radius: 2000, size: 5 });
+}
+
 
     function onSpeechResult(transcript) {
       let clean = correctInput(transcript);
