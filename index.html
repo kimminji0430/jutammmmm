@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html>
 <head>
@@ -6,6 +7,18 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
   <script src="https://dapi.kakao.com/v2/maps/sdk.js?appkey=c3538b3d362494aa354799bac1a30973&libraries=services"></script>
+  <script>
+  // 1. 그래프 데이터 전역변수 선언 및 fetch
+  let customGraph = null;
+  fetch('graph.json')
+    .then(res => res.json())
+    .then(graph => {
+      customGraph = graph;
+    });
+
+  // 2. 지도 생성
+  let map = L.map('map').setView([36.665, 127.493], 15);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(map);
   <style>
     html, body { height: 100%; margin: 0; }
     #map { height: 100%; width: 100%; }
@@ -327,6 +340,43 @@ function onSpeechResult(transcript) {
       const a = Math.sin(dLat/2)**2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon/2)**2;
       return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
     }
+// ★★★ 여기에 추가!! (distance 밑에)
+  function findClosestNode(lat, lon, nodes) {
+    let minDist = Infinity, minId = null;
+    for (let node of nodes) {
+      let d = distance(lat, lon, node.lat, node.lon);
+      if (d < minDist) {
+        minDist = d; minId = node.id;
+      }
+    }
+    return minId;
+  }
+
+  function dijkstra(nodes, edges, startId, endId) {
+    let dist = {}, prev = {};
+    let Q = new Set(nodes.map(n => n.id));
+    for (let n of Q) dist[n] = Infinity;
+    dist[startId] = 0;
+
+    while (Q.size > 0) {
+      let u = [...Q].reduce((a,b) => dist[a] < dist[b] ? a : b);
+      Q.delete(u);
+      if (u == endId) break;
+      for (let e of edges.filter(e => e.from == u && Q.has(e.to))) {
+        let alt = dist[u] + e.weight;
+        if (alt < dist[e.to]) {
+          dist[e.to] = alt;
+          prev[e.to] = u;
+        }
+      }
+    }
+    let path = [], u = endId;
+    while (u !== undefined) {
+      path.unshift(u);
+      u = prev[u];
+    }
+    return path;
+  }
 
     // == 나침반(부채꼴=목표, 침=현위치), offset 없이
     function drawCompass(targetAngle, tolerance, currentAngle) {
