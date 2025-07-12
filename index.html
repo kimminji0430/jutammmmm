@@ -75,7 +75,7 @@
     let routeCoords=[], currentLatLng=null, currentMarker=null, startMarker=null, endMarker=null;
     let routeLine=null, traveledLine=null, closestIndex=0;
     let deviceHeading=null, fixedTargetAngle=null, lastToldCorrect=null;
-    let directionMsgLock=false, lastAcceptedLatLng=null;
+    let lastSpokenMsg = null; // 최근에 안내한 메시지
 
     // 위험지역 예시 (고정)
     const dangerZones = [
@@ -99,12 +99,17 @@
 
     // TTS
     function speak(text) {
-      if (directionMsgLock) return;
+      // 음성이 진행중이라도 항상 바로 중단 후 새로 안내
+      if (speechSynthesis.speaking) {
+        speechSynthesis.cancel();
+      }
+      // 같은 메시지가 연속으로 중복 안내되지 않도록 방지
+      if (lastSpokenMsg === text) return;
+      lastSpokenMsg = text;
       const utterance = new SpeechSynthesisUtterance(text);
       utterance.lang = 'ko-KR';
-      utterance.onend = () => { directionMsgLock = false; };
+      utterance.onend = () => { lastSpokenMsg = null; };
       speechSynthesis.speak(utterance);
-      directionMsgLock = true;
     }
 
     // 음성인식
@@ -291,19 +296,21 @@
       let diff = Math.abs(fixedTargetAngle - deviceHeading);
       let angleDiff = Math.min(diff, 360 - diff);
       let isCorrect = angleDiff <= tolerance;
-      if (!isCorrect) {
-        if (!directionMsgLock) {
-          speak("방향이 틀렸습니다. 화살표를 초록색 안으로 돌려주세요.");
-        }
-        lastToldCorrect = false;
-      } else {
-        if (lastToldCorrect !== true && !directionMsgLock) {
+      // 맞으면 바로 "맞았습니다", 틀리면 바로 "틀렸습니다"
+      if (isCorrect) {
+        if (lastToldCorrect !== true) {
           speak("방향이 맞았습니다. 계속 이동하세요.");
           lastToldCorrect = true;
         }
+      } else {
+        if (lastToldCorrect !== false) {
+          speak("방향이 틀렸습니다. 화살표를 초록색 안으로 돌려주세요.");
+          lastToldCorrect = false;
+        }
       }
     }
-    setInterval(updateCompassAlways, 2000);
+    // 바로바로 반응 (0.3초마다 체크)
+    setInterval(updateCompassAlways, 300);
 
     // ===== 검색 박스 기능 =====
     function searchPlaces() {
