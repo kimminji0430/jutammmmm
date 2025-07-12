@@ -265,6 +265,7 @@ function onSpeechResult(transcript) {
 
     document.getElementById("micBtn").onclick = () => {
       voiceStep=0; candidates=[]; selectedCand=null; finalLatLng=null;
+      speak("도착지를 말씀해 주세요");
       startSpeechRecognition("도착지를 말씀해 주세요. 예: 약국, 편의점, 카페");
     };
 
@@ -405,6 +406,7 @@ function updateCompassAlways() {
       document.getElementById('micBtn').style.display = 'block';
       document.getElementById('voiceStatus').style.display = 'block';
       voiceStep=0; candidates=[]; selectedCand=null; finalLatLng=null;
+      speak("도착지를 말씀해 주세요");
       setTimeout(() => startSpeechRecognition("도착지를 말씀해 주세요. 예: 약국, 편의점, 카페"), 1000);
     }
 
