@@ -263,7 +263,7 @@
 
     // == 나침반(부채꼴=목표, 침=현위치), offset 없이
     function drawCompass(targetAngle, tolerance, currentAngle) {
-      tolerance = 12;
+      tolerance = 20;
       const canvas = document.getElementById("compassCanvas");
       const ctx = canvas.getContext("2d");
       ctx.clearRect(0,0,200,200);
@@ -286,7 +286,7 @@
     // offset 없이 각도 비교
     function updateCompassAlways() {
       if (deviceHeading === null || fixedTargetAngle === null) return;
-      const tolerance = 12;
+      const tolerance = 20;
       drawCompass(fixedTargetAngle, tolerance, deviceHeading);
       let diff = Math.abs(fixedTargetAngle - deviceHeading);
       let angleDiff = Math.min(diff, 360 - diff);
