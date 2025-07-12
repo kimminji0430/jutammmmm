@@ -67,6 +67,22 @@
   <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
   <script>
     console.log("스크립트 실행!");
+    if (navigator.geolocation) {
+  console.log("Geolocation supported");
+  navigator.geolocation.watchPosition(
+    pos => {
+      console.log("위치 수신!", pos.coords.latitude, pos.coords.longitude);
+      // 기존 마커/지도 코드…
+    },
+    err => {
+      console.error("위치 서비스 오류:", err);
+    },
+    { enableHighAccuracy: true, maximumAge: 1000, timeout: 5000 }
+  );
+} else {
+  console.error("Geolocation 미지원");
+}
+
     // ===== 지도 & 위험구간 =====
     let map = L.map('map').setView([36.665, 127.493], 15);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(map);
