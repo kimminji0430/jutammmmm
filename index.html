@@ -521,20 +521,60 @@ function updateCompassAlways() {
       const url = `https://router.project-osrm.org/route/v1/walking/${start[1]},${start[0]};${end[1]},${end[0]}?overview=full&geometries=geojson`;
       fetch(url).then(res=>res.json()).then(data=>{
         const coords = data.routes[0].geometry.coordinates.map(c=>[c[1],c[0]]);
-    // [1] 위험구간 포함 여부 체크!
-        if (isDangerInRoute(coords, dangerZones)) {
-          speak("위험구간이 포함되어 있어 안전 경로로 안내합니다.");
-          runCustomRoute(start, end); // 내가 만든 그래프 경로 안내로 분기!
+    
+    // 1. 위험구간 인덱스 찾기 (반경 내에서 첫 진입, 마지막 이탈)
+        let enterIdx = -1, exitIdx = -1, dz = null;
+        outer: for (let i=0; i<coords.length; i++) {
+          for (let dzone of dangerZones) {
+            let d = distance(coords[i][0], coords[i][1], dzone.lat, dzone.lon);
+            if (d < 20) { enterIdx = i; dz = dzone; break outer; }
+          }
+        }
+    // 위험구간이 없으면 그냥 OSRM 안내
+        if (enterIdx === -1) {
+          routeCoords = coords;
+          if (routeLine) map.removeLayer(routeLine);
+          routeLine = L.polyline(coords, { color:'blue' }).addTo(map);
+          map.fitBounds(routeLine.getBounds());
+          speak("경로를 안내합니다."); showDangerMarkers();
           return;
         }
-    // [2] 위험구간이 없으면 기존대로 OSRM 경로 안내
-        routeCoords=coords;
+    // exitIdx: 위험구간 벗어난 뒤 첫 지점
+        exitIdx = enterIdx;
+        for (let i=enterIdx; i<coords.length; i++) {
+          let d = distance(coords[i][0], coords[i][1], dz.lat, dz.lon);
+          if (d > 30) { exitIdx = i; break; }
+        }
+
+    // 2. customGraph 우회 (위험구간 진입 전 좌표~이탈 후 좌표)
+        if (!customGraph) {
+          alert("우회 그래프가 없습니다!"); return;
+        }
+        const pre = coords.slice(0, enterIdx);   // OSRM 진입 전
+        const aft = coords.slice(exitIdx);       // OSRM 이탈 후
+
+    // customGraph: 시작/종료를 위험구간 진입/이탈 좌표로 설정
+        const cstart = coords[enterIdx-1];
+        const cend = coords[exitIdx];
+        const startId = findClosestNode(cstart[0], cstart[1], customGraph.nodes);
+        const endId = findClosestNode(cend[0], cend[1], customGraph.nodes);
+        const nodePath = dijkstra(customGraph.nodes, customGraph.edges, startId, endId);
+        const customPath = nodePath.map(id => {
+          const n = customGraph.nodes.find(n => n.id === id);
+          return [n.lat, n.lon];
+        });
+
+    // 3. 전체 경로 이어붙이기
+        const fullRoute = [...pre, ...customPath, ...aft];
+        routeCoords = fullRoute;
         if (routeLine) map.removeLayer(routeLine);
-        routeLine = L.polyline(coords, { color:'blue' }).addTo(map);
+        routeLine = L.polyline(fullRoute, { color:'orange' }).addTo(map);
         map.fitBounds(routeLine.getBounds());
-        speak("경로를 안내합니다."); showDangerMarkers();
+        speak("위험구간을 우회하는 경로로 안내합니다.");
+        showDangerMarkers();
       });
     }
+
 
     // GPS 위치 트래킹
     if (navigator.geolocation) {
