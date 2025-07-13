@@ -7,19 +7,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
   <script src="https://dapi.kakao.com/v2/maps/sdk.js?appkey=c3538b3d362494aa354799bac1a30973&libraries=services"></script>
-  <script>
-  // 1. 그래프 데이터 전역변수 선언 및 fetch
-  let customGraph = null;
-  fetch('graph.json')
-    .then(res => res.json())
-    .then(graph => {
-      customGraph = graph;
-    });
-
-  // 2. 지도 생성
-  let map = L.map('map').setView([36.665, 127.493], 15);
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(map);
-  <style>
+    <style>
     html, body { height: 100%; margin: 0; }
     #map { height: 100%; width: 100%; }
     .top-buttons {
@@ -63,6 +51,17 @@
     }
     #results li { margin: 2px 0; }
   </style>
+  <script>
+  // 1. 그래프 데이터 전역변수 선언 및 fetch
+  let customGraph = null;
+  fetch('graph.json')
+    .then(res => res.json())
+    .then(graph => {
+      customGraph = graph;
+    });
+
+  // 2. 지도 생성
+
 </head>
 <body>
   <div id="map"></div>
