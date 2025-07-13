@@ -340,6 +340,15 @@ function onSpeechResult(transcript) {
       const a = Math.sin(dLat/2)**2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon/2)**2;
       return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
     }
+    function isDangerInRoute(coords, dangerZones, threshold=20) {
+      for (let i=0; i<coords.length; i++) {
+        for (let dz of dangerZones) {
+          const d = distance(coords[i][0], coords[i][1], dz.lat, dz.lon);
+          if (d < threshold) return true;
+        }
+      }
+      return false;
+    }
 // ★★★ 여기에 추가!! (distance 밑에)
   function findClosestNode(lat, lon, nodes) {
     let minDist = Infinity, minId = null;
@@ -377,6 +386,29 @@ function onSpeechResult(transcript) {
     }
     return path;
   }
+    function runCustomRoute(start, end) {
+      if (!customGraph) {
+        alert("그래프 데이터가 로드되지 않았습니다!");
+        return;
+      }
+  // 1. 가장 가까운 그래프 노드 찾기
+      const startId = findClosestNode(start[0], start[1], customGraph.nodes);
+      const endId = findClosestNode(end[0], end[1], customGraph.nodes);
+  // 2. dijkstra로 경로 찾기
+      const nodePath = dijkstra(customGraph.nodes, customGraph.edges, startId, endId);
+  // 3. 노드 id 리스트를 [lat, lon] 좌표로 변환
+      const pathCoords = nodePath.map(id => {
+        const n = customGraph.nodes.find(n => n.id === id);
+        return [n.lat, n.lon];
+      });
+  // 4. 지도에 표시
+      routeCoords = pathCoords;
+      if (routeLine) map.removeLayer(routeLine);
+      routeLine = L.polyline(pathCoords, { color:'red' }).addTo(map);
+      map.fitBounds(routeLine.getBounds());
+      speak("안전 경로로 안내합니다.");
+      showDangerMarkers();
+    }
 
     // == 나침반(부채꼴=목표, 침=현위치), offset 없이
     function drawCompass(targetAngle, tolerance, currentAngle) {
@@ -492,7 +524,15 @@ function updateCompassAlways() {
       const url = `https://router.project-osrm.org/route/v1/walking/${start[1]},${start[0]};${end[1]},${end[0]}?overview=full&geometries=geojson`;
       fetch(url).then(res=>res.json()).then(data=>{
         const coords = data.routes[0].geometry.coordinates.map(c=>[c[1],c[0]]);
+    // [1] 위험구간 포함 여부 체크!
+        if (isDangerInRoute(coords, dangerZones)) {
+          speak("위험구간이 포함되어 있어 안전 경로로 안내합니다.");
+          runCustomRoute(start, end); // 내가 만든 그래프 경로 안내로 분기!
+          return;
+        }
+    // [2] 위험구간이 없으면 기존대로 OSRM 경로 안내
         routeCoords=coords;
+        if (routeLine) map.removeLayer(routeLine);
         routeLine = L.polyline(coords, { color:'blue' }).addTo(map);
         map.fitBounds(routeLine.getBounds());
         speak("경로를 안내합니다."); showDangerMarkers();
