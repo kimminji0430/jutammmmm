@@ -73,6 +73,7 @@
       .then(res => res.json())
       .then(graph => {
         customGraph = graph;
+        applyDangerWeights(customGraph, dangerZones, 20); 
       });
 
     // 2. 지도 생성
@@ -346,6 +347,24 @@ function onSpeechResult(transcript) {
       }
       return false;
     }
+    // 위험지역이 포함된 엣지는 가중치를 9999로 변경
+function applyDangerWeights(graph, dangerZones, threshold=20) {
+  let nodeDict = {};
+  graph.nodes.forEach(n => { nodeDict[n.id] = n; });
+  graph.edges.forEach(edge => {
+    let n1 = nodeDict[edge.from];
+    let n2 = nodeDict[edge.to];
+    for (let dz of dangerZones) {
+      let d1 = distance(n1.lat, n1.lon, dz.lat, dz.lon);
+      let d2 = distance(n2.lat, n2.lon, dz.lat, dz.lon);
+      if (d1 < threshold || d2 < threshold) {
+        edge.weight = 9999;
+        break;
+      }
+    }
+  });
+}
+
 // ★★★ 여기에 추가!! (distance 밑에)
   function findClosestNode(lat, lon, nodes) {
     let minDist = Infinity, minId = null;
